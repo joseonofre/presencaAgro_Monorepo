@@ -1,11 +1,9 @@
-import { router, useNavigation } from 'expo-router';
-import type { DrawerNavigationProp } from '@react-navigation/drawer';
+import { router } from 'expo-router';
 import { Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, Paragraph, Text, XStack, YStack } from 'tamagui';
 
-import { LogoFull } from '@/components/Logo';
-import { MenuIcon } from '@/components/TabIcons';
+import { AppHeader } from '@/components/AppHeader';
 import { colors } from '@/theme/colors';
 
 function FeatureCard({
@@ -55,18 +53,9 @@ function FeatureCard({
 }
 
 export default function InicioScreen() {
-  const navigation = useNavigation<DrawerNavigationProp<{ '(tabs)': undefined }>>();
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
-      {/* Header com botão menu (drawer) */}
-      <XStack px="$4" py="$3" items="center" justify="space-between">
-        <Pressable onPress={() => navigation.openDrawer()} hitSlop={12}>
-          <MenuIcon color={colors.text} />
-        </Pressable>
-        <LogoFull size={140} />
-        <YStack width={24} />
-      </XStack>
+      <AppHeader title="Início" />
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
         <YStack gap="$4">

@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -38,6 +39,7 @@ function CustomDrawerContent() {
         />
 
         <YStack gap="$1">
+          <DrawerItem label="Meu perfil" onPress={() => router.push('/perfil')} />
           <DrawerItem label="Sobre o app" />
           <DrawerItem label="Configurações" />
           <DrawerItem label="Ajuda e suporte" />
@@ -65,9 +67,9 @@ function CustomDrawerContent() {
   );
 }
 
-function DrawerItem({ label }: { label: string }) {
+function DrawerItem({ label, onPress }: { label: string; onPress?: () => void }) {
   return (
-    <Pressable>
+    <Pressable onPress={onPress}>
       {({ pressed }) => (
         <YStack
           p="$3"
@@ -94,6 +96,7 @@ export default function DrawerLayout() {
       }}
     >
       <Drawer.Screen name="(tabs)" options={{ title: 'Início' }} />
+      <Drawer.Screen name="perfil" options={{ title: 'Meu perfil' }} />
     </Drawer>
   );
 }

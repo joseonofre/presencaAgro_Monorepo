@@ -1,19 +1,13 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Paragraph, Text, YStack } from 'tamagui';
 
+import { AppHeader } from '@/components/AppHeader';
 import { colors } from '@/theme/colors';
 
 export default function AgendaScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
-      <YStack p="$4" gap="$2">
-        <Text fontSize={22} fontWeight="800" color={colors.text}>
-          Agenda
-        </Text>
-        <Paragraph fontSize={13} color={colors.textMuted}>
-          Calendário com visitas, SLA por fazenda e janelas de colheita.
-        </Paragraph>
-      </YStack>
+      <AppHeader title="Agenda" />
 
       <YStack flex={1} items="center" justify="center" px="$4">
         <Text fontSize={48}>📅</Text>

@@ -26,6 +26,7 @@ import {
   type FotoOcorrencia,
   type NivelInfestacao,
   type OcorrenciaTalhao,
+  type PragaOcorrencia,
   type Talhao,
   type TipoVisita,
   type VisitaSalva,
@@ -44,6 +45,7 @@ type Step =
   | 'praga_pergunta'
   | 'praga_selecao'
   | 'nivel'
+  | 'mais_praga'
   // Plantio
   | 'cultura'
   | 'variedade'
@@ -81,8 +83,10 @@ type ChatItem =
 interface CurrentTalhao {
   talhaoId?: string;
   talhaoNome?: string;
-  // Monitoramento
+  // Monitoramento — pragas já finalizadas neste talhão
   identificouPraga?: boolean;
+  pragas: PragaOcorrencia[];
+  // Praga em andamento (sendo capturada agora)
   pragaId?: string;
   pragaNomeCustom?: string;
   nivel?: NivelInfestacao;
@@ -124,10 +128,11 @@ type Action =
   | { type: 'add-foto'; foto: FotoOcorrencia }
   | { type: 'remove-foto'; index: number }
   | { type: 'set-current'; patch: Partial<CurrentTalhao> }
+  | { type: 'finalize-praga'; items: ChatItem[]; proximoStep: Step }
   | { type: 'finalize-current'; items: ChatItem[]; proximoStep: Step }
   | { type: 'edit-from'; snapshot: EditSnapshot };
 
-const emptyCurrent: CurrentTalhao = { fotos: [], observacao: '', recomendacao: '' };
+const emptyCurrent: CurrentTalhao = { pragas: [], fotos: [], observacao: '', recomendacao: '' };
 
 const initialState: State = {
   step: 'boot',
@@ -193,21 +198,48 @@ function reducer(state: State, action: Action): State {
       };
     case 'set-current':
       return { ...state, current: { ...state.current, ...action.patch } };
+    case 'finalize-praga': {
+      // Move a praga em andamento (com suas fotos) para current.pragas e limpa o buffer.
+      const c = state.current;
+      const pragaNome =
+        (c.pragaId ? mockPragas.find((p) => p.id === c.pragaId)?.nome : c.pragaNomeCustom) ?? '';
+      const novaPraga: PragaOcorrencia = {
+        pragaId: c.pragaId,
+        pragaNome,
+        nivelInfestacao: c.nivel,
+        fotos: c.fotos,
+      };
+      const snapshot = takeSnapshot(state);
+      const itemsComSnapshot = action.items.map((item) =>
+        item.kind === 'user' && !item.locked && !item.editSnapshot
+          ? { ...item, editSnapshot: snapshot }
+          : item,
+      );
+      return {
+        ...state,
+        current: {
+          ...c,
+          pragas: [...c.pragas, novaPraga],
+          pragaId: undefined,
+          pragaNomeCustom: undefined,
+          nivel: undefined,
+          fotos: [],
+        },
+        historico: [...state.historico, ...itemsComSnapshot],
+        stepsAnteriores: [...state.stepsAnteriores, state.step],
+        step: action.proximoStep,
+      };
+    }
     case 'finalize-current': {
       const c = state.current;
       if (!c.talhaoId || !c.talhaoNome) return state;
-      const pragaNome = c.pragaId
-        ? mockPragas.find((p) => p.id === c.pragaId)?.nome
-        : c.pragaNomeCustom;
 
       const novaOcorrencia: OcorrenciaTalhao = {
         talhaoId: c.talhaoId,
         talhaoNome: c.talhaoNome,
-        // monitoramento
+        // monitoramento — pragas (cada uma com suas fotos)
         identificouPraga: c.identificouPraga,
-        pragaId: c.pragaId,
-        pragaNome,
-        nivelInfestacao: c.nivel,
+        pragas: c.pragas.length > 0 ? c.pragas : undefined,
         // plantio
         cultura: c.cultura,
         variedade: c.variedade,
@@ -572,6 +604,8 @@ function ActiveArea({
       return <QuickPragaSelecao dispatch={dispatch} />;
     case 'nivel':
       return <QuickNivel state={state} dispatch={dispatch} />;
+    case 'mais_praga':
+      return <QuickMaisPraga state={state} dispatch={dispatch} />;
     case 'cultura':
       return <QuickCultura state={state} dispatch={dispatch} />;
     case 'variedade':
@@ -974,6 +1008,51 @@ function QuickNivel({
       {niveis.map((n) => (
         <QABtn key={n.key} icon={n.emoji} label={nivelLabel[n.key]} onPress={() => escolher(n.key)} />
       ))}
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Mais pragas no talhão? ─────────────────────────────────────
+
+function QuickMaisPraga({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  function sim() {
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: 'Sim, outra praga', choice: true },
+        { kind: 'bot', texto: 'Qual praga foi identificada?' },
+      ],
+      proximoStep: 'praga_selecao',
+    });
+  }
+
+  function nao() {
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: 'Não', choice: true },
+        { kind: 'bot', texto: `Qual sua recomendação técnica para o ${state.current.talhaoNome}?` },
+      ],
+      proximoStep: 'recomendacao',
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <XStack gap="$2">
+        <View style={{ flex: 1 }}>
+          <QABtn label="Sim, outra praga" icon="🐛" variant="primary" onPress={sim} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <QABtn label="Não" icon="✅" onPress={nao} />
+        </View>
+      </XStack>
     </QABarContainer>
   );
 }
@@ -1511,19 +1590,13 @@ function QuickFotos({
     setCameraAberta(false);
   }
 
+  // Plantio/Colheita: as fotos ficam no nível do talhão e o fluxo segue normal.
   function avancarSemFotos() {
-    const proximo: Step =
-      state.tipoVisita === 'plantio'
-        ? 'adubacao_base'
-        : state.tipoVisita === 'colheita'
-          ? 'observacao'
-          : 'recomendacao';
+    const proximo: Step = state.tipoVisita === 'plantio' ? 'adubacao_base' : 'observacao';
     const pergunta =
       state.tipoVisita === 'plantio'
         ? 'Como foi a adubação de base?'
-        : state.tipoVisita === 'colheita'
-          ? 'Alguma observação sobre a colheita?'
-          : `Qual sua recomendação técnica para o ${state.current.talhaoNome}?`;
+        : 'Alguma observação sobre a colheita?';
     dispatch({
       type: 'push',
       items: [
@@ -1535,23 +1608,6 @@ function QuickFotos({
   }
 
   function concluirFotos() {
-    if (fotos.length === 0) {
-      avancarSemFotos();
-      return;
-    }
-    const proximo: Step =
-      state.tipoVisita === 'plantio'
-        ? 'adubacao_base'
-        : state.tipoVisita === 'colheita'
-          ? 'observacao'
-          : 'recomendacao';
-    const pergunta =
-      state.tipoVisita === 'plantio'
-        ? 'Como foi a adubação de base?'
-        : state.tipoVisita === 'colheita'
-          ? 'Alguma observação sobre a colheita?'
-          : `Qual sua recomendação técnica para o ${state.current.talhaoNome}?`;
-
     const ultima = fotos[fotos.length - 1];
     const geo =
       ultima && ultima.latitude !== undefined && ultima.longitude !== undefined
@@ -1560,12 +1616,34 @@ function QuickFotos({
     const pragaNome = state.current.pragaId
       ? mockPragas.find((p) => p.id === state.current.pragaId)?.nome
       : state.current.pragaNomeCustom;
-    const labelTipo =
-      state.tipoVisita === 'monitoramento_pragas'
-        ? pragaNome ?? 'ocorrência'
-        : state.tipoVisita === 'plantio'
-          ? state.current.cultura ?? 'plantio'
-          : state.current.cultura ?? 'cultura';
+
+    // Monitoramento: as fotos pertencem à praga atual → finaliza a praga e pergunta se há outra.
+    if (state.tipoVisita === 'monitoramento_pragas') {
+      dispatch({
+        type: 'finalize-praga',
+        items: [
+          {
+            kind: 'evidence',
+            label: `${fotos.length} foto${fotos.length > 1 ? 's' : ''} de ${pragaNome ?? 'praga'}`,
+            geo,
+          },
+          { kind: 'bot', texto: `Você identificou outra praga no ${state.current.talhaoNome}?` },
+        ],
+        proximoStep: 'mais_praga',
+      });
+      return;
+    }
+
+    if (fotos.length === 0) {
+      avancarSemFotos();
+      return;
+    }
+    const proximo: Step = state.tipoVisita === 'plantio' ? 'adubacao_base' : 'observacao';
+    const pergunta =
+      state.tipoVisita === 'plantio'
+        ? 'Como foi a adubação de base?'
+        : 'Alguma observação sobre a colheita?';
+    const labelTipo = state.current.cultura ?? (state.tipoVisita === 'plantio' ? 'plantio' : 'cultura');
 
     dispatch({
       type: 'push',

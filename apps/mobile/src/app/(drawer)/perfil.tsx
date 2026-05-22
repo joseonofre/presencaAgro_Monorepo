@@ -1,7 +1,9 @@
-import { ScrollView } from 'react-native';
+import { router } from 'expo-router';
+import { Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, Paragraph, Text, XStack, YStack } from 'tamagui';
 
+import { BackIcon } from '@/components/TabIcons';
 import { colors } from '@/theme/colors';
 
 function InfoRow({ label, valor }: { label: string; valor: string }) {
@@ -27,6 +29,15 @@ function InfoRow({ label, valor }: { label: string; valor: string }) {
 export default function PerfilScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
+      <XStack px="$4" py="$3" items="center" gap="$3">
+        <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} hitSlop={12}>
+          <BackIcon color={colors.text} />
+        </Pressable>
+        <Text fontSize={18} fontWeight="700" color={colors.text}>
+          Meu perfil
+        </Text>
+      </XStack>
+
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
         <YStack items="center" pt="$4" gap="$2">
           <YStack

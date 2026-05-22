@@ -1,8 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { FotoOcorrencia, OcorrenciaTalhao, VisitaSalva } from './mocks';
+import { pragasDoTalhao, type FotoOcorrencia, type OcorrenciaTalhao, type VisitaSalva } from './mocks';
 
 const STORAGE_KEY = '@presenca-agro/visitas';
+
+/**
+ * Garante que cada ocorrência tenha `pragas[]` preenchido. Registros antigos
+ * guardavam uma única praga + fotos no talhão; aqui convertemos para o
+ * formato atual (uma PragaOcorrencia com as fotos daquele talhão).
+ */
+function normalizarOcorrencia(o: OcorrenciaTalhao): OcorrenciaTalhao {
+  if (o.pragas && o.pragas.length > 0) return o;
+  const pragas = pragasDoTalhao(o);
+  return pragas.length > 0 ? { ...o, pragas } : o;
+}
 
 // 'previsao_colheita' foi removido — vira 'colheita' transparentemente ao ler dados antigos.
 function normalizarTipo(t: unknown): VisitaSalva['tipo'] {
@@ -31,7 +42,7 @@ function migrar(raw: unknown): VisitaSalva | null {
       data: typeof v.data === 'string' ? v.data : new Date().toISOString(),
       fazendaId: typeof v.fazendaId === 'string' ? v.fazendaId : '',
       fazendaNome: typeof v.fazendaNome === 'string' ? v.fazendaNome : '',
-      ocorrencias: v.ocorrencias as OcorrenciaTalhao[],
+      ocorrencias: (v.ocorrencias as OcorrenciaTalhao[]).map(normalizarOcorrencia),
       gpsLatitude: typeof v.gpsLatitude === 'number' ? v.gpsLatitude : undefined,
       gpsLongitude: typeof v.gpsLongitude === 'number' ? v.gpsLongitude : undefined,
       gpsCapturadoEm: typeof v.gpsCapturadoEm === 'string' ? v.gpsCapturadoEm : undefined,
@@ -88,7 +99,7 @@ function migrar(raw: unknown): VisitaSalva | null {
     data: typeof v.data === 'string' ? v.data : new Date().toISOString(),
     fazendaId: typeof v.fazendaId === 'string' ? v.fazendaId : '',
     fazendaNome: typeof v.fazendaNome === 'string' ? v.fazendaNome : '',
-    ocorrencias,
+    ocorrencias: ocorrencias.map(normalizarOcorrencia),
     gpsLatitude: typeof v.gpsLatitude === 'number' ? v.gpsLatitude : undefined,
     gpsLongitude: typeof v.gpsLongitude === 'number' ? v.gpsLongitude : undefined,
     gpsCapturadoEm: typeof v.gpsCapturadoEm === 'string' ? v.gpsCapturadoEm : undefined,

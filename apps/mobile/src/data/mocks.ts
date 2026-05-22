@@ -35,6 +35,17 @@ export interface FotoOcorrencia {
   capturadoEm: string;
 }
 
+/**
+ * Praga identificada num talhão. Cada praga carrega suas próprias fotos —
+ * a evidência fotográfica é por praga, não pelo talhão inteiro.
+ */
+export interface PragaOcorrencia {
+  pragaId?: string;
+  pragaNome: string;
+  nivelInfestacao?: NivelInfestacao;
+  fotos: FotoOcorrencia[];
+}
+
 export interface VisitaAgendada {
   id: string;
   tipo: TipoVisita;
@@ -55,6 +66,10 @@ export interface OcorrenciaTalhao {
 
   // Monitoramento de pragas
   identificouPraga?: boolean;
+  // Cada talhão pode ter várias pragas, cada uma com fotos próprias.
+  pragas?: PragaOcorrencia[];
+
+  // [legado] schema antigo guardava uma única praga por talhão — mantido p/ retrocompat.
   pragaId?: string;
   pragaNome?: string;
   nivelInfestacao?: NivelInfestacao;
@@ -78,10 +93,45 @@ export interface OcorrenciaTalhao {
   janelaBase?: string;
   janelaFim?: string;
 
-  // Comum a todas as tipologias
+  // Fotos no nível do talhão — usadas em Plantio/Colheita (e como legado p/ monitoramento).
   fotos: FotoOcorrencia[];
   recomendacao?: string;
   observacao?: string;
+}
+
+/**
+ * Pragas de um talhão, normalizando o legado: se a ocorrência ainda usa o
+ * formato antigo (uma praga + fotos no talhão), converte para PragaOcorrencia[].
+ */
+export function pragasDoTalhao(o: OcorrenciaTalhao): PragaOcorrencia[] {
+  if (o.pragas && o.pragas.length > 0) return o.pragas;
+  if (o.pragaNome) {
+    return [
+      {
+        pragaId: o.pragaId,
+        pragaNome: o.pragaNome,
+        nivelInfestacao: o.nivelInfestacao,
+        fotos: o.fotos ?? [],
+      },
+    ];
+  }
+  return [];
+}
+
+const ordemNivel: Record<NivelInfestacao, number> = {
+  baixo: 0,
+  medio: 1,
+  alto: 2,
+  critico: 3,
+};
+
+/** Nível de infestação mais alto entre as pragas de um talhão (ou undefined). */
+export function nivelMaisAltoDoTalhao(o: OcorrenciaTalhao): NivelInfestacao | undefined {
+  const niveis = pragasDoTalhao(o)
+    .map((p) => p.nivelInfestacao)
+    .filter((n): n is NivelInfestacao => n !== undefined);
+  if (niveis.length === 0) return undefined;
+  return niveis.reduce((a, b) => (ordemNivel[b] > ordemNivel[a] ? b : a));
 }
 
 export const CULTURAS_DISPONIVEIS = [
@@ -204,6 +254,119 @@ export const mockPragas: Praga[] = [
   { id: 'p7', nome: 'Cigarrinha do milho', cultura_alvo: ['Milho'] },
   { id: 'p8', nome: 'Helicoverpa', cultura_alvo: ['Soja', 'Milho', 'Algodão'] },
 ];
+
+// ─── Clientes (produtor + suas fazendas) ─────────────────────────────
+
+export interface Cliente {
+  id: string;
+  nome: string;
+  telefone: string;
+  email: string;
+  fazendaIds: string[];
+}
+
+export const mockClientes: Cliente[] = [
+  {
+    id: 'c1',
+    nome: 'Antônio Pereira',
+    telefone: '(65) 98765-4321',
+    email: 'antonio@boaesperanca.agr.br',
+    fazendaIds: ['f1'],
+  },
+  {
+    id: 'c2',
+    nome: 'Maria Aparecida',
+    telefone: '(66) 99123-5678',
+    email: 'maria@sitiosaojoao.com.br',
+    fazendaIds: ['f2'],
+  },
+  {
+    id: 'c3',
+    nome: 'João Carlos',
+    telefone: '(65) 98234-9876',
+    email: 'joao@tresmarias.agr.br',
+    fazendaIds: ['f3'],
+  },
+  {
+    id: 'c4',
+    nome: 'Roberto Andrade',
+    telefone: '(65) 99876-5432',
+    email: 'roberto@cerradoverde.com',
+    fazendaIds: ['f4'],
+  },
+];
+
+/** Total de talhões e área (ha) de uma fazenda, somando os talhões mockados. */
+export function statsFazenda(fazendaId: string): { talhoes: number; areaHa: number } {
+  const talhoes = mockTalhoes.filter((t) => t.fazendaId === fazendaId);
+  return {
+    talhoes: talhoes.length,
+    areaHa: talhoes.reduce((acc, t) => acc + t.area_ha, 0),
+  };
+}
+
+// ─── Pedidos de insumos ──────────────────────────────────────────────
+
+export type StatusPedido = 'pendente' | 'aprovado' | 'cancelado';
+
+export const statusPedidoLabel: Record<StatusPedido, string> = {
+  pendente: 'Pendente',
+  aprovado: 'Aprovado',
+  cancelado: 'Cancelado',
+};
+
+export interface Pedido {
+  id: string;
+  clienteNome: string;
+  fazendaNome: string;
+  responsavel: string;
+  local: string;
+  valor: number;
+  status: StatusPedido;
+}
+
+export const mockPedidos: Pedido[] = [
+  {
+    id: 'pd1',
+    clienteNome: 'Antônio Pereira',
+    fazendaNome: 'Fazenda Boa Esperança',
+    responsavel: 'Carlos Mendes',
+    local: 'Armazém Principal',
+    valor: 15450,
+    status: 'pendente',
+  },
+  {
+    id: 'pd2',
+    clienteNome: 'Maria Aparecida',
+    fazendaNome: 'Sítio São João',
+    responsavel: 'Ana Paula Silva',
+    local: 'Depósito Fazenda',
+    valor: 28750,
+    status: 'aprovado',
+  },
+  {
+    id: 'pd3',
+    clienteNome: 'João Carlos',
+    fazendaNome: 'Fazenda Três Marias',
+    responsavel: 'Roberto Costa',
+    local: 'Galpão Central',
+    valor: 12300,
+    status: 'cancelado',
+  },
+  {
+    id: 'pd4',
+    clienteNome: 'Roberto Andrade',
+    fazendaNome: 'Fazenda Cerrado Verde',
+    responsavel: 'Marcos Ferreira',
+    local: 'Base de Operações',
+    valor: 42890,
+    status: 'pendente',
+  },
+];
+
+export function formatBRL(valor: number): string {
+  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
 // ─── Próximas visitas agendadas (Home) ───────────────────────────────
 
