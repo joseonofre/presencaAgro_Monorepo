@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react';
 import type { KeyboardTypeOptions } from 'react-native';
 import { Pressable } from 'react-native';
-import { Input, Text, YStack } from 'tamagui';
+import { Input, Text, XStack, YStack } from 'tamagui';
 
+import { BackIcon } from '@/components/TabIcons';
 import { colors } from '@/theme/colors';
 
 interface FieldProps {
@@ -24,8 +26,11 @@ export function Field({ label, ...inputProps }: FieldProps) {
       <Input
         {...inputProps}
         size="$4"
-        bg={colors.surface}
+        height={52}
+        rounded={12}
+        bg={colors.bg}
         borderColor={colors.border}
+        borderWidth={1}
         color={colors.text}
       />
     </YStack>
@@ -36,58 +41,76 @@ interface ButtonProps {
   label: string;
   onPress?: () => void;
   disabled?: boolean;
+  icon?: ReactNode;
 }
 
-/** Botão primário verde (ação principal). */
-export function PrimaryButton({ label, onPress, disabled }: ButtonProps) {
+/** Botão primário verde (ação principal), com sombra e ícone opcional. */
+export function PrimaryButton({ label, onPress, disabled, icon }: ButtonProps) {
   return (
     <Pressable onPress={onPress} disabled={disabled}>
       {({ pressed }) => (
-        <YStack
-          py="$3.5"
-          rounded="$4"
+        <XStack
+          height={56}
+          rounded={12}
           items="center"
+          justify="center"
+          gap="$2"
           bg={disabled ? colors.borderStrong : pressed ? colors.greenDark : colors.green}
+          style={{
+            shadowColor: colors.greenDeep,
+            shadowOpacity: disabled ? 0 : 0.25,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: disabled ? 0 : 3,
+          }}
         >
+          {icon}
           <Text fontSize={16} fontWeight="700" color={colors.white}>
             {label}
           </Text>
-        </YStack>
+        </XStack>
       )}
     </Pressable>
   );
 }
 
-/** Botão secundário com contorno verde. */
-export function SecondaryButton({ label, onPress, disabled }: ButtonProps) {
+/** Botão secundário com contorno verde e ícone opcional. */
+export function SecondaryButton({ label, onPress, disabled, icon }: ButtonProps) {
   return (
     <Pressable onPress={onPress} disabled={disabled}>
       {({ pressed }) => (
-        <YStack
-          py="$3.5"
-          rounded="$4"
+        <XStack
+          height={56}
+          rounded={12}
           items="center"
-          borderWidth={1.5}
+          justify="center"
+          gap="$2"
+          borderWidth={2}
           borderColor={colors.green}
-          bg={pressed ? colors.greenLighter : 'transparent'}
+          bg={pressed ? colors.greenLighter : colors.surface}
         >
+          {icon}
           <Text fontSize={16} fontWeight="700" color={colors.green}>
             {label}
           </Text>
-        </YStack>
+        </XStack>
       )}
     </Pressable>
   );
 }
 
-/** Link de voltar (chevron + texto) para o topo das telas públicas. */
-export function BackLink({ onPress }: { onPress: () => void }) {
+/** Link de voltar (chevron + texto). `tone="light"` para usar sobre fundo verde. */
+export function BackLink({ onPress, tone = 'green' }: { onPress: () => void; tone?: 'green' | 'light' }) {
+  const base = tone === 'light' ? colors.white : colors.green;
   return (
     <Pressable onPress={onPress} hitSlop={12}>
       {({ pressed }) => (
-        <Text fontSize={15} fontWeight="600" color={pressed ? colors.greenDark : colors.green}>
-          ‹ Voltar
-        </Text>
+        <XStack items="center" gap="$1.5" opacity={pressed ? 0.7 : 1}>
+          <BackIcon color={base} size={20} />
+          <Text fontSize={15} fontWeight="600" color={base}>
+            Voltar
+          </Text>
+        </XStack>
       )}
     </Pressable>
   );
