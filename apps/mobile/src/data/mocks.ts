@@ -1,4 +1,4 @@
-export type TipoVisita = 'plantio' | 'previsao_colheita' | 'monitoramento_pragas';
+export type TipoVisita = 'plantio' | 'colheita' | 'monitoramento_pragas';
 
 export type StatusVisita = 'agendada' | 'em_andamento' | 'realizada';
 
@@ -45,16 +45,55 @@ export interface VisitaAgendada {
   talhao?: string;
 }
 
+/**
+ * Ocorrência num talhão dentro de uma visita.
+ * Os campos opcionais são preenchidos conforme o tipo de visita escolhido.
+ */
 export interface OcorrenciaTalhao {
   talhaoId: string;
   talhaoNome: string;
-  identificouPraga: boolean;
+
+  // Monitoramento de pragas
+  identificouPraga?: boolean;
   pragaId?: string;
   pragaNome?: string;
   nivelInfestacao?: NivelInfestacao;
+
+  // Plantio
+  cultura?: string;
+  variedade?: string;
+  dataPlantio?: string; // ISO ou texto livre
+  cicloDias?: number;
+  adubacaoBase?: string;
+
+  // Colheita
+  dataColheita?: string;       // ISO
+  produtividade?: number;       // sc/ha
+  umidade?: number;             // %
+
+  // [legado — schemas anteriores tinham previsão de colheita; mantido p/ retrocompat]
+  dataPlantioEstimada?: string;
+  cicloDiasEstimado?: number;
+  janelaInicio?: string;
+  janelaBase?: string;
+  janelaFim?: string;
+
+  // Comum a todas as tipologias
   fotos: FotoOcorrencia[];
   recomendacao?: string;
+  observacao?: string;
 }
+
+export const CULTURAS_DISPONIVEIS = [
+  'Soja',
+  'Milho',
+  'Algodão',
+  'Café',
+  'Cana-de-açúcar',
+  'Feijão',
+  'Trigo',
+  'Sorgo',
+] as const;
 
 export interface VisitaSalva {
   id: string;
@@ -70,7 +109,7 @@ export interface VisitaSalva {
 
 export const tipoLabel: Record<TipoVisita, string> = {
   plantio: 'Plantio',
-  previsao_colheita: 'Previsão de colheita',
+  colheita: 'Colheita',
   monitoramento_pragas: 'Monitoramento de pragas',
 };
 
@@ -180,7 +219,7 @@ export const mockProximasVisitas: VisitaAgendada[] = [
   },
   {
     id: '2',
-    tipo: 'previsao_colheita',
+    tipo: 'colheita',
     status: 'agendada',
     data: '2026-05-22T14:30:00',
     fazenda: 'Sítio São João',

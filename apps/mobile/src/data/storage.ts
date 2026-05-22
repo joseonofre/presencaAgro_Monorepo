@@ -4,6 +4,13 @@ import type { FotoOcorrencia, OcorrenciaTalhao, VisitaSalva } from './mocks';
 
 const STORAGE_KEY = '@presenca-agro/visitas';
 
+// 'previsao_colheita' foi removido — vira 'colheita' transparentemente ao ler dados antigos.
+function normalizarTipo(t: unknown): VisitaSalva['tipo'] {
+  if (t === 'previsao_colheita') return 'colheita';
+  if (t === 'plantio' || t === 'colheita' || t === 'monitoramento_pragas') return t;
+  return 'monitoramento_pragas';
+}
+
 /**
  * Migra registros salvos em versões anteriores do schema para o formato atual.
  * Trata 3 gerações de modelo:
@@ -20,7 +27,7 @@ function migrar(raw: unknown): VisitaSalva | null {
   if (Array.isArray(v.ocorrencias)) {
     return {
       id: v.id,
-      tipo: (v.tipo as VisitaSalva['tipo']) ?? 'monitoramento_pragas',
+      tipo: normalizarTipo(v.tipo),
       data: typeof v.data === 'string' ? v.data : new Date().toISOString(),
       fazendaId: typeof v.fazendaId === 'string' ? v.fazendaId : '',
       fazendaNome: typeof v.fazendaNome === 'string' ? v.fazendaNome : '',

@@ -15,16 +15,19 @@ import { Input, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 
 import { BackIcon } from '@/components/TabIcons';
 import {
+  CULTURAS_DISPONIVEIS,
   fazendasProximas,
   mockFazendas,
   mockPragas,
   nivelLabel,
   talhoesDeFazenda,
+  tipoLabel,
   type Fazenda,
   type FotoOcorrencia,
   type NivelInfestacao,
   type OcorrenciaTalhao,
   type Talhao,
+  type TipoVisita,
   type VisitaSalva,
 } from '@/data/mocks';
 import { saveVisita } from '@/data/storage';
@@ -35,30 +38,67 @@ import { colors } from '@/theme/colors';
 type Step =
   | 'boot'
   | 'fazenda'
+  | 'tipo_visita'
   | 'talhao'
+  // Monitoramento de pragas
   | 'praga_pergunta'
   | 'praga_selecao'
   | 'nivel'
+  // Plantio
+  | 'cultura'
+  | 'variedade'
+  | 'data_plantio'
+  | 'ciclo_dias'
+  | 'adubacao_base'
+  // Colheita
+  | 'data_colheita'
+  | 'produtividade'
+  | 'umidade'
+  | 'observacao'
+  // Comum
   | 'fotos'
   | 'recomendacao'
   | 'mais_talhao'
-  | 'confirmar'
-  | 'done';
+  | 'confirmar';
+
+interface EditSnapshot {
+  step: Step;
+  stepsAnteriores: Step[];
+  current: CurrentTalhao;
+  fazendaId?: string;
+  fazendaNome?: string;
+  tipoVisita?: TipoVisita;
+  ocorrencias: OcorrenciaTalhao[];
+  historicoLen: number;
+}
 
 type ChatItem =
   | { kind: 'bot'; texto: string }
-  | { kind: 'user'; texto: string; choice?: boolean }
+  | { kind: 'user'; texto: string; choice?: boolean; locked?: boolean; editSnapshot?: EditSnapshot }
   | { kind: 'evidence'; label: string; geo?: string }
   | { kind: 'divider'; texto: string };
 
 interface CurrentTalhao {
   talhaoId?: string;
   talhaoNome?: string;
+  // Monitoramento
   identificouPraga?: boolean;
   pragaId?: string;
   pragaNomeCustom?: string;
   nivel?: NivelInfestacao;
+  // Plantio
+  cultura?: string;
+  variedade?: string;
+  dataPlantio?: string;
+  cicloDias?: number;
+  adubacaoBase?: string;
+  // Colheita
+  dataColheita?: string;
+  produtividade?: number;
+  umidade?: number;
+  // Comum
   fotos: FotoOcorrencia[];
+  observacao: string;
   recomendacao: string;
 }
 
@@ -69,6 +109,7 @@ interface State {
 
   fazendaId?: string;
   fazendaNome?: string;
+  tipoVisita?: TipoVisita;
   ocorrencias: OcorrenciaTalhao[];
   current: CurrentTalhao;
 
@@ -79,14 +120,14 @@ interface State {
 
 type Action =
   | { type: 'push'; items: ChatItem[]; proximoStep: Step; patchState?: Partial<State>; patchCurrent?: Partial<CurrentTalhao> }
-  | { type: 'back' }
   | { type: 'set-gps'; latitude: number; longitude: number }
   | { type: 'add-foto'; foto: FotoOcorrencia }
   | { type: 'remove-foto'; index: number }
   | { type: 'set-current'; patch: Partial<CurrentTalhao> }
-  | { type: 'finalize-current'; items: ChatItem[]; proximoStep: Step };
+  | { type: 'finalize-current'; items: ChatItem[]; proximoStep: Step }
+  | { type: 'edit-from'; snapshot: EditSnapshot };
 
-const emptyCurrent: CurrentTalhao = { fotos: [], recomendacao: '' };
+const emptyCurrent: CurrentTalhao = { fotos: [], observacao: '', recomendacao: '' };
 
 const initialState: State = {
   step: 'boot',
@@ -96,27 +137,38 @@ const initialState: State = {
   current: emptyCurrent,
 };
 
+function takeSnapshot(state: State): EditSnapshot {
+  return {
+    step: state.step,
+    stepsAnteriores: state.stepsAnteriores,
+    current: state.current,
+    fazendaId: state.fazendaId,
+    fazendaNome: state.fazendaNome,
+    tipoVisita: state.tipoVisita,
+    ocorrencias: state.ocorrencias,
+    historicoLen: state.historico.length,
+  };
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
-    case 'push':
+    case 'push': {
+      const snapshot = takeSnapshot(state);
+      const itemsComSnapshot = action.items.map((item) => {
+        if (item.kind === 'user' && !item.locked && !item.editSnapshot) {
+          return { ...item, editSnapshot: snapshot };
+        }
+        return item;
+      });
       return {
         ...state,
         ...(action.patchState ?? {}),
-        current: action.patchCurrent ? { ...state.current, ...action.patchCurrent } : state.current,
-        historico: [...state.historico, ...action.items],
+        current: action.patchCurrent
+          ? { ...state.current, ...action.patchCurrent }
+          : state.current,
+        historico: [...state.historico, ...itemsComSnapshot],
         stepsAnteriores: [...state.stepsAnteriores, state.step],
         step: action.proximoStep,
-      };
-    case 'back': {
-      if (state.stepsAnteriores.length === 0) return state;
-      const proximosAnteriores = state.stepsAnteriores.slice(0, -1);
-      const anterior = state.stepsAnteriores[state.stepsAnteriores.length - 1];
-      const recortar = state.step === 'fotos' ? 3 : 2;
-      return {
-        ...state,
-        step: anterior,
-        stepsAnteriores: proximosAnteriores,
-        historico: state.historico.slice(0, -recortar),
       };
     }
     case 'set-gps':
@@ -143,41 +195,98 @@ function reducer(state: State, action: Action): State {
       return { ...state, current: { ...state.current, ...action.patch } };
     case 'finalize-current': {
       const c = state.current;
-      if (!c.talhaoId || !c.talhaoNome || c.identificouPraga === undefined) return state;
+      if (!c.talhaoId || !c.talhaoNome) return state;
       const pragaNome = c.pragaId
         ? mockPragas.find((p) => p.id === c.pragaId)?.nome
         : c.pragaNomeCustom;
+
       const novaOcorrencia: OcorrenciaTalhao = {
         talhaoId: c.talhaoId,
         talhaoNome: c.talhaoNome,
+        // monitoramento
         identificouPraga: c.identificouPraga,
         pragaId: c.pragaId,
         pragaNome,
         nivelInfestacao: c.nivel,
+        // plantio
+        cultura: c.cultura,
+        variedade: c.variedade,
+        dataPlantio: c.dataPlantio,
+        cicloDias: c.cicloDias,
+        adubacaoBase: c.adubacaoBase?.trim() || undefined,
+        // colheita
+        dataColheita: c.dataColheita,
+        produtividade: c.produtividade,
+        umidade: c.umidade,
+        // comum
         fotos: c.fotos,
+        observacao: c.observacao.trim() || undefined,
         recomendacao: c.recomendacao.trim() || undefined,
       };
+      const snapshot = takeSnapshot(state);
+      const itemsComSnapshot = action.items.map((item) => {
+        if (item.kind === 'user' && !item.locked && !item.editSnapshot) {
+          return { ...item, editSnapshot: snapshot };
+        }
+        return item;
+      });
       return {
         ...state,
         ocorrencias: [...state.ocorrencias, novaOcorrencia],
         current: emptyCurrent,
-        historico: [...state.historico, ...action.items],
+        historico: [...state.historico, ...itemsComSnapshot],
         stepsAnteriores: [...state.stepsAnteriores, state.step],
         step: action.proximoStep,
+      };
+    }
+    case 'edit-from': {
+      const s = action.snapshot;
+      return {
+        ...state,
+        step: s.step,
+        stepsAnteriores: s.stepsAnteriores,
+        current: s.current,
+        fazendaId: s.fazendaId,
+        fazendaNome: s.fazendaNome,
+        tipoVisita: s.tipoVisita,
+        ocorrencias: s.ocorrencias,
+        historico: state.historico.slice(0, s.historicoLen),
       };
     }
   }
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────
+
 function subtituloDoStep(state: State): string {
   if (state.step === 'boot') return 'Detectando localização…';
-  if (state.fazendaNome) {
+  if (state.tipoVisita && state.fazendaNome) {
     const completos = state.ocorrencias.length;
+    const tipo = tipoLabel[state.tipoVisita];
     return completos > 0
-      ? `${state.fazendaNome} • ${completos} talhão${completos > 1 ? 'es' : ''} registrado${completos > 1 ? 's' : ''}`
-      : state.fazendaNome;
+      ? `${tipo} • ${state.fazendaNome} • ${completos} talhã${completos > 1 ? 'es' : 'o'}`
+      : `${tipo} • ${state.fazendaNome}`;
   }
-  return 'Monitoramento de pragas';
+  if (state.fazendaNome) return state.fazendaNome;
+  return 'Nova visita';
+}
+
+function proximoStepAposTalhao(tipo: TipoVisita): Step {
+  switch (tipo) {
+    case 'monitoramento_pragas':
+      return 'praga_pergunta';
+    case 'plantio':
+      return 'cultura';
+    case 'colheita':
+      return 'cultura';
+  }
+}
+
+function formatDataBR(iso?: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 // ─── Tela ─────────────────────────────────────────────────────────────
@@ -209,11 +318,7 @@ export default function NovaVisitaScreen() {
           type: 'push',
           items: [
             { kind: 'bot', texto: 'Olá, Onofre! 👋' },
-            {
-              kind: 'bot',
-              texto:
-                'Vou te ajudar a registrar uma visita de monitoramento de pragas. Em qual fazenda você está?',
-            },
+            { kind: 'bot', texto: 'Vou te ajudar a registrar uma visita. Em qual fazenda você está?' },
           ],
           proximoStep: 'fazenda',
         });
@@ -222,21 +327,52 @@ export default function NovaVisitaScreen() {
   }, []);
 
   function handleVoltar() {
-    if (state.stepsAnteriores.length === 0) {
+    const algumProgresso =
+      state.fazendaId !== undefined ||
+      state.tipoVisita !== undefined ||
+      state.ocorrencias.length > 0 ||
+      state.current.talhaoId !== undefined;
+    if (!algumProgresso) {
       router.back();
-    } else {
-      dispatch({ type: 'back' });
+      return;
     }
+    Alert.alert(
+      'Sair da visita?',
+      'Você vai perder os dados preenchidos até agora.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sair',
+          style: 'destructive',
+          onPress: () => router.back(),
+        },
+      ],
+    );
+  }
+
+  function handleEdit(snapshot: EditSnapshot, texto: string) {
+    Alert.alert(
+      'Editar resposta?',
+      `Você vai voltar pra "${texto}" e perder o que preencheu depois.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Editar',
+          style: 'destructive',
+          onPress: () => dispatch({ type: 'edit-from', snapshot }),
+        },
+      ],
+    );
   }
 
   async function handleSalvar() {
-    if (!state.fazendaId || state.ocorrencias.length === 0) return;
+    if (!state.fazendaId || !state.tipoVisita || state.ocorrencias.length === 0) return;
     setSalvando(true);
     try {
       const fazenda = mockFazendas.find((f) => f.id === state.fazendaId)!;
       const visita: VisitaSalva = {
         id: `v-${Date.now()}`,
-        tipo: 'monitoramento_pragas',
+        tipo: state.tipoVisita,
         data: new Date().toISOString(),
         fazendaId: fazenda.id,
         fazendaNome: fazenda.nome,
@@ -275,7 +411,7 @@ export default function NovaVisitaScreen() {
           <Text fontSize={16} fontWeight="700" color={colors.text}>
             Nova visita
           </Text>
-          <Text fontSize={12} color={colors.textMuted} fontWeight="500">
+          <Text fontSize={12} color={colors.textMuted} fontWeight="500" numberOfLines={1}>
             {subtituloDoStep(state)}
           </Text>
         </YStack>
@@ -289,7 +425,7 @@ export default function NovaVisitaScreen() {
       >
         <YStack gap="$2">
           {state.historico.map((item, i) => (
-            <Bubble key={i} item={item} />
+            <Bubble key={i} item={item} onEdit={handleEdit} />
           ))}
           {state.step === 'boot' && <Spinner color={colors.green} />}
         </YStack>
@@ -307,7 +443,13 @@ export default function NovaVisitaScreen() {
 
 // ─── Bubbles ──────────────────────────────────────────────────────────
 
-function Bubble({ item }: { item: ChatItem }) {
+function Bubble({
+  item,
+  onEdit,
+}: {
+  item: ChatItem;
+  onEdit: (snapshot: EditSnapshot, texto: string) => void;
+}) {
   if (item.kind === 'bot') {
     return (
       <XStack maxW="80%">
@@ -328,14 +470,24 @@ function Bubble({ item }: { item: ChatItem }) {
     );
   }
   if (item.kind === 'user') {
+    const editavel = !!item.editSnapshot && !item.locked;
     return (
-      <XStack justify="flex-end">
+      <XStack justify="flex-end" items="center" gap="$2">
+        {editavel && (
+          <Pressable
+            onPress={() => onEdit(item.editSnapshot!, item.texto)}
+            hitSlop={10}
+            style={styles.editBtn}
+          >
+            <Text style={{ fontSize: 14 }}>✏️</Text>
+          </Pressable>
+        )}
         <YStack
           bg={item.choice ? colors.greenDark : colors.green}
           px="$3"
           py="$2"
           rounded="$5"
-          maxW="80%"
+          maxW="78%"
           style={styles.bubbleUserShape}
         >
           <Text fontSize={14} color={colors.white} lineHeight={20}>
@@ -356,7 +508,6 @@ function Bubble({ item }: { item: ChatItem }) {
       </XStack>
     );
   }
-  // evidence
   return (
     <XStack maxW="80%">
       <XStack
@@ -411,6 +562,8 @@ function ActiveArea({
       return null;
     case 'fazenda':
       return <QuickFazenda state={state} dispatch={dispatch} />;
+    case 'tipo_visita':
+      return <QuickTipoVisita dispatch={dispatch} />;
     case 'talhao':
       return <QuickTalhao state={state} dispatch={dispatch} />;
     case 'praga_pergunta':
@@ -419,6 +572,24 @@ function ActiveArea({
       return <QuickPragaSelecao dispatch={dispatch} />;
     case 'nivel':
       return <QuickNivel state={state} dispatch={dispatch} />;
+    case 'cultura':
+      return <QuickCultura state={state} dispatch={dispatch} />;
+    case 'variedade':
+      return <QuickVariedade state={state} dispatch={dispatch} />;
+    case 'data_plantio':
+      return <QuickDataPlantio state={state} dispatch={dispatch} />;
+    case 'ciclo_dias':
+      return <QuickCiclo state={state} dispatch={dispatch} />;
+    case 'data_colheita':
+      return <QuickDataColheita state={state} dispatch={dispatch} />;
+    case 'produtividade':
+      return <QuickProdutividade state={state} dispatch={dispatch} />;
+    case 'umidade':
+      return <QuickUmidade state={state} dispatch={dispatch} />;
+    case 'adubacao_base':
+      return <QuickAdubacaoBase state={state} dispatch={dispatch} />;
+    case 'observacao':
+      return <QuickObservacao state={state} dispatch={dispatch} />;
     case 'fotos':
       return <QuickFotos state={state} dispatch={dispatch} />;
     case 'recomendacao':
@@ -427,12 +598,10 @@ function ActiveArea({
       return <QuickMaisTalhao state={state} dispatch={dispatch} />;
     case 'confirmar':
       return <QuickConfirmar onSalvar={onSalvar} salvando={salvando} />;
-    case 'done':
-      return null;
   }
 }
 
-// ─── Quick: componentes utilitários ──────────────────────────────────
+// ─── Quick: utilitários ──────────────────────────────────────────────
 
 function QABarContainer({ children }: { children: React.ReactNode }) {
   return (
@@ -451,14 +620,15 @@ function QABtn({
 }: {
   label: string;
   icon?: string;
-  variant?: 'primary' | 'secondary' | 'danger';
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   onPress: () => void;
   disabled?: boolean;
 }) {
-  const bg = variant === 'primary' ? colors.green : colors.surface;
+  const bg =
+    variant === 'primary' ? colors.green : variant === 'ghost' ? 'transparent' : colors.surface;
   const fg =
     variant === 'primary' ? colors.white : variant === 'danger' ? colors.red : colors.green;
-  const border = variant === 'danger' ? colors.red : colors.green;
+  const border = variant === 'danger' ? colors.red : variant === 'ghost' ? colors.border : colors.green;
 
   return (
     <Pressable onPress={onPress} disabled={disabled}>
@@ -491,12 +661,10 @@ function QuickFazenda({
   dispatch: React.Dispatch<Action>;
 }) {
   const [verTodas, setVerTodas] = useState(false);
-
   const proximas =
     state.gpsLatitude !== undefined && state.gpsLongitude !== undefined
       ? fazendasProximas(state.gpsLatitude, state.gpsLongitude, 3)
       : null;
-
   const lista: Array<Fazenda & { distanciaKm?: number }> =
     verTodas || !proximas ? mockFazendas.map((f) => ({ ...f })) : proximas;
 
@@ -504,10 +672,11 @@ function QuickFazenda({
     dispatch({
       type: 'push',
       items: [
-        { kind: 'user', texto: f.nome, choice: true },
-        { kind: 'bot', texto: `Por qual talhão da ${f.nome} você quer começar?` },
+        // Fazenda fica LOCKED: não pode editar
+        { kind: 'user', texto: f.nome, choice: true, locked: true },
+        { kind: 'bot', texto: 'Qual o tipo de visita?' },
       ],
-      proximoStep: 'talhao',
+      proximoStep: 'tipo_visita',
       patchState: { fazendaId: f.id, fazendaNome: f.nome },
     });
   }
@@ -543,7 +712,36 @@ function QuickFazenda({
   );
 }
 
-// ─── Step: Talhão (single, com filtro de já registrados) ─────────────
+// ─── Step: Tipo de Visita (LOCKED) ────────────────────────────────────
+
+function QuickTipoVisita({ dispatch }: { dispatch: React.Dispatch<Action> }) {
+  function escolher(tipo: TipoVisita) {
+    const proximaPergunta =
+      tipo === 'monitoramento_pragas'
+        ? 'Por qual talhão você quer começar?'
+        : 'Por qual talhão você quer começar?';
+    dispatch({
+      type: 'push',
+      items: [
+        // Tipo fica LOCKED
+        { kind: 'user', texto: tipoLabel[tipo], choice: true, locked: true },
+        { kind: 'bot', texto: proximaPergunta },
+      ],
+      proximoStep: 'talhao',
+      patchState: { tipoVisita: tipo },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <QABtn label={tipoLabel.monitoramento_pragas} icon="🐛" variant="primary" onPress={() => escolher('monitoramento_pragas')} />
+      <QABtn label={tipoLabel.plantio} icon="🌱" onPress={() => escolher('plantio')} />
+      <QABtn label={tipoLabel.colheita} icon="🌾" onPress={() => escolher('colheita')} />
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Talhão ─────────────────────────────────────────────────────
 
 function QuickTalhao({
   state,
@@ -557,16 +755,18 @@ function QuickTalhao({
   const disponiveis = todos.filter((t) => !idsJaRegistrados.has(t.id));
 
   function escolher(t: Talhao) {
+    const proximo = state.tipoVisita ? proximoStepAposTalhao(state.tipoVisita) : 'praga_pergunta';
+    const proximaPergunta =
+      state.tipoVisita === 'monitoramento_pragas'
+        ? `Você identificou alguma praga no ${t.nome}?`
+        : `Qual a cultura plantada no ${t.nome}?`;
     dispatch({
       type: 'push',
       items: [
         { kind: 'user', texto: t.nome, choice: true },
-        {
-          kind: 'bot',
-          texto: `Você identificou alguma praga no ${t.nome}?`,
-        },
+        { kind: 'bot', texto: proximaPergunta },
       ],
-      proximoStep: 'praga_pergunta',
+      proximoStep: proximo,
       patchCurrent: { talhaoId: t.id, talhaoNome: t.nome },
     });
   }
@@ -578,7 +778,7 @@ function QuickTalhao({
       </Text>
       {disponiveis.length === 0 ? (
         <Paragraph fontSize={13} color={colors.textMuted}>
-          Todos os talhões dessa fazenda já foram registrados nessa visita.
+          Todos os talhões dessa fazenda já foram registrados.
         </Paragraph>
       ) : (
         disponiveis.map((t) => (
@@ -618,10 +818,7 @@ function QuickPragaPergunta({
         type: 'push',
         items: [
           { kind: 'user', texto: 'Não', choice: true },
-          {
-            kind: 'bot',
-            texto: `Qual sua recomendação técnica para o ${state.current.talhaoNome}?`,
-          },
+          { kind: 'bot', texto: `Qual sua recomendação técnica para o ${state.current.talhaoNome}?` },
         ],
         proximoStep: 'recomendacao',
         patchCurrent: {
@@ -678,7 +875,7 @@ function QuickPragaSelecao({ dispatch }: { dispatch: React.Dispatch<Action> }) {
     dispatch({
       type: 'push',
       items: [
-        { kind: 'user', texto: texto, choice: true },
+        { kind: 'user', texto, choice: true },
         { kind: 'bot', texto: 'Qual o nível de infestação?' },
       ],
       proximoStep: 'nivel',
@@ -728,11 +925,7 @@ function QuickPragaSelecao({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         bg={colors.surface}
         borderColor={colors.border}
       />
-      <RNScrollView
-        style={{ maxHeight: 220 }}
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-      >
+      <RNScrollView style={{ maxHeight: 220 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
         <YStack gap="$2">
           {filtradas.map((p) => (
             <QABtn
@@ -743,11 +936,7 @@ function QuickPragaSelecao({ dispatch }: { dispatch: React.Dispatch<Action> }) {
           ))}
         </YStack>
       </RNScrollView>
-      <QABtn
-        label="+ Adicionar outra praga"
-        variant="primary"
-        onPress={() => setAdicionando(true)}
-      />
+      <QABtn label="+ Adicionar outra praga" variant="primary" onPress={() => setAdicionando(true)} />
     </QABarContainer>
   );
 }
@@ -773,10 +962,7 @@ function QuickNivel({
       type: 'push',
       items: [
         { kind: 'user', texto: nivelLabel[n], choice: true },
-        {
-          kind: 'bot',
-          texto: `Registre fotos da ocorrência no ${state.current.talhaoNome}. Cada foto será georreferenciada.`,
-        },
+        { kind: 'bot', texto: `Registre fotos da ocorrência no ${state.current.talhaoNome}. Cada foto será georreferenciada.` },
       ],
       proximoStep: 'fotos',
       patchCurrent: { nivel: n },
@@ -786,18 +972,505 @@ function QuickNivel({
   return (
     <QABarContainer>
       {niveis.map((n) => (
-        <QABtn
-          key={n.key}
-          icon={n.emoji}
-          label={nivelLabel[n.key]}
-          onPress={() => escolher(n.key)}
-        />
+        <QABtn key={n.key} icon={n.emoji} label={nivelLabel[n.key]} onPress={() => escolher(n.key)} />
       ))}
     </QABarContainer>
   );
 }
 
-// ─── Step: Fotos ──────────────────────────────────────────────────────
+// ─── Step: Cultura (Plantio + Previsão) ──────────────────────────────
+
+function QuickCultura({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [adicionando, setAdicionando] = useState(false);
+  const [custom, setCustom] = useState('');
+
+  function escolher(cultura: string) {
+    const proximoStep: Step =
+      state.tipoVisita === 'plantio' ? 'variedade' : 'data_colheita';
+    const proximaPergunta =
+      state.tipoVisita === 'plantio'
+        ? 'Qual a variedade ou semente utilizada?'
+        : 'Qual a data da colheita? (DD/MM/AAAA)';
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: cultura, choice: true },
+        { kind: 'bot', texto: proximaPergunta },
+      ],
+      proximoStep,
+      patchCurrent: { cultura },
+    });
+  }
+
+  function confirmarCustom() {
+    const texto = custom.trim();
+    if (!texto) return;
+    escolher(texto);
+    setAdicionando(false);
+    setCustom('');
+  }
+
+  if (adicionando) {
+    return (
+      <QABarContainer>
+        <Text fontSize={11} color={colors.textMuted} fontWeight="700">
+          CULTURA
+        </Text>
+        <Input
+          value={custom}
+          onChangeText={setCustom}
+          placeholder="Ex.: Girassol"
+          autoFocus
+          bg={colors.surface}
+          borderColor={colors.border}
+        />
+        <XStack gap="$2">
+          <View style={{ flex: 1 }}>
+            <QABtn label="Cancelar" onPress={() => setAdicionando(false)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <QABtn label="Usar" variant="primary" disabled={!custom.trim()} onPress={confirmarCustom} />
+          </View>
+        </XStack>
+      </QABarContainer>
+    );
+  }
+
+  return (
+    <QABarContainer>
+      {CULTURAS_DISPONIVEIS.map((c) => (
+        <QABtn key={c} label={c} onPress={() => escolher(c)} />
+      ))}
+      <QABtn label="+ Outra cultura" variant="primary" onPress={() => setAdicionando(true)} />
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Variedade (Plantio) ───────────────────────────────────────
+
+function QuickVariedade({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [valor, setValor] = useState(state.current.variedade ?? '');
+
+  function confirmar() {
+    const texto = valor.trim();
+    if (!texto) return;
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto, choice: true },
+        { kind: 'bot', texto: 'Qual a data do plantio? (DD/MM/AAAA)' },
+      ],
+      proximoStep: 'data_plantio',
+      patchCurrent: { variedade: texto },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <Input
+        value={valor}
+        onChangeText={setValor}
+        placeholder="Ex.: TMG 7062 IPRO"
+        bg={colors.surface}
+        borderColor={colors.border}
+      />
+      <QABtn label="Continuar" variant="primary" disabled={!valor.trim()} onPress={confirmar} />
+    </QABarContainer>
+  );
+}
+
+// ─── Helpers de data ─────────────────────────────────────────────────
+
+function parseDataBR(input: string): string {
+  const m = input.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return input;
+  const [, d, mo, y] = m;
+  const date = new Date(Number(y), Number(mo) - 1, Number(d));
+  if (Number.isNaN(date.getTime())) return input;
+  return date.toISOString();
+}
+
+function hojeBR() {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+// ─── Step: Data de plantio ───────────────────────────────────────────
+
+function QuickDataPlantio({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [valor, setValor] = useState(state.current.dataPlantio ?? '');
+
+  function confirmar(textoFinal: string) {
+    const iso = parseDataBR(textoFinal);
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: textoFinal, choice: true },
+        { kind: 'bot', texto: 'Qual o ciclo da cultura? (em dias)' },
+      ],
+      proximoStep: 'ciclo_dias',
+      patchCurrent: { dataPlantio: iso },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <Input
+        value={valor}
+        onChangeText={setValor}
+        placeholder="DD/MM/AAAA"
+        keyboardType="numbers-and-punctuation"
+        bg={colors.surface}
+        borderColor={colors.border}
+      />
+      <XStack gap="$2">
+        <View style={{ flex: 1 }}>
+          <QABtn
+            label="Usar hoje"
+            onPress={() => {
+              const h = hojeBR();
+              setValor(h);
+              confirmar(h);
+            }}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <QABtn label="Continuar" variant="primary" disabled={!valor.trim()} onPress={() => confirmar(valor)} />
+        </View>
+      </XStack>
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Ciclo em dias (Plantio) ────────────────────────────────────
+
+function QuickCiclo({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [valor, setValor] = useState(
+    state.current.cicloDias !== undefined ? String(state.current.cicloDias) : '',
+  );
+
+  function confirmar() {
+    const n = Number(valor.trim());
+    if (!Number.isFinite(n) || n <= 0) return;
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: `${n} dias`, choice: true },
+        { kind: 'bot', texto: 'Tire fotos do plantio (opcional).' },
+      ],
+      proximoStep: 'fotos',
+      patchCurrent: { cicloDias: n },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <Input
+        value={valor}
+        onChangeText={setValor}
+        placeholder="Ex.: 110"
+        keyboardType="number-pad"
+        bg={colors.surface}
+        borderColor={colors.border}
+      />
+      <QABtn
+        label="Continuar"
+        variant="primary"
+        disabled={!valor.trim() || !Number.isFinite(Number(valor.trim())) || Number(valor.trim()) <= 0}
+        onPress={confirmar}
+      />
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Data da colheita ──────────────────────────────────────────
+
+function QuickDataColheita({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [valor, setValor] = useState(state.current.dataColheita ?? '');
+
+  function confirmar(textoFinal: string) {
+    const iso = parseDataBR(textoFinal);
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: textoFinal, choice: true },
+        { kind: 'bot', texto: 'Qual a produtividade? (em sacas por hectare)' },
+      ],
+      proximoStep: 'produtividade',
+      patchCurrent: { dataColheita: iso },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <Input
+        value={valor}
+        onChangeText={setValor}
+        placeholder="DD/MM/AAAA"
+        keyboardType="numbers-and-punctuation"
+        bg={colors.surface}
+        borderColor={colors.border}
+      />
+      <XStack gap="$2">
+        <View style={{ flex: 1 }}>
+          <QABtn
+            label="Usar hoje"
+            onPress={() => {
+              const h = hojeBR();
+              setValor(h);
+              confirmar(h);
+            }}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <QABtn label="Continuar" variant="primary" disabled={!valor.trim()} onPress={() => confirmar(valor)} />
+        </View>
+      </XStack>
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Produtividade (sc/ha) ─────────────────────────────────────
+
+function QuickProdutividade({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [valor, setValor] = useState(
+    state.current.produtividade !== undefined ? String(state.current.produtividade) : '',
+  );
+
+  function confirmar() {
+    const n = Number(valor.replace(',', '.').trim());
+    if (!Number.isFinite(n) || n <= 0) return;
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: `${n} sc/ha`, choice: true },
+        { kind: 'bot', texto: 'Qual a umidade do grão? (em %)' },
+      ],
+      proximoStep: 'umidade',
+      patchCurrent: { produtividade: n },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <Input
+        value={valor}
+        onChangeText={setValor}
+        placeholder="Ex.: 65"
+        keyboardType="decimal-pad"
+        bg={colors.surface}
+        borderColor={colors.border}
+      />
+      <QABtn
+        label="Continuar"
+        variant="primary"
+        disabled={!valor.trim() || !Number.isFinite(Number(valor.replace(',', '.').trim())) || Number(valor.replace(',', '.').trim()) <= 0}
+        onPress={confirmar}
+      />
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Umidade (%) ───────────────────────────────────────────────
+
+function QuickUmidade({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [valor, setValor] = useState(
+    state.current.umidade !== undefined ? String(state.current.umidade) : '',
+  );
+
+  function confirmar(pular: boolean) {
+    if (pular) {
+      dispatch({
+        type: 'push',
+        items: [
+          { kind: 'user', texto: '(pulado)', choice: true },
+          { kind: 'bot', texto: 'Tire fotos da colheita (opcional).' },
+        ],
+        proximoStep: 'fotos',
+      });
+      return;
+    }
+    const n = Number(valor.replace(',', '.').trim());
+    if (!Number.isFinite(n) || n < 0) return;
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: `${n}%`, choice: true },
+        { kind: 'bot', texto: 'Tire fotos da colheita (opcional).' },
+      ],
+      proximoStep: 'fotos',
+      patchCurrent: { umidade: n },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <Input
+        value={valor}
+        onChangeText={setValor}
+        placeholder="Ex.: 13.5"
+        keyboardType="decimal-pad"
+        bg={colors.surface}
+        borderColor={colors.border}
+      />
+      <XStack gap="$2">
+        <View style={{ flex: 1 }}>
+          <QABtn label="Pular" onPress={() => confirmar(true)} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <QABtn
+            label="Continuar"
+            variant="primary"
+            disabled={!valor.trim() || !Number.isFinite(Number(valor.replace(',', '.').trim())) || Number(valor.replace(',', '.').trim()) < 0}
+            onPress={() => confirmar(false)}
+          />
+        </View>
+      </XStack>
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Adubação de base (Plantio, com Pular) ─────────────────────
+
+function QuickAdubacaoBase({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [valor, setValor] = useState(state.current.adubacaoBase ?? '');
+
+  function avancar(texto: string | null) {
+    const t = texto ?? '';
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: t || '(pulado)', choice: true },
+        { kind: 'bot', texto: `Qual sua recomendação técnica para o ${state.current.talhaoNome}?` },
+      ],
+      proximoStep: 'recomendacao',
+      patchCurrent: { adubacaoBase: t || undefined },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <Input
+        multiline
+        numberOfLines={4}
+        minH={100}
+        placeholder="Adubação de base utilizada (NPK, dosagem, etc.)"
+        value={valor}
+        onChangeText={setValor}
+        textAlignVertical="top"
+        bg={colors.surface}
+        borderColor={colors.border}
+      />
+      <XStack gap="$2">
+        <View style={{ flex: 1 }}>
+          <QABtn label="Pular" onPress={() => avancar(null)} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <QABtn label="Continuar" variant="primary" disabled={!valor.trim()} onPress={() => avancar(valor)} />
+        </View>
+      </XStack>
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Observação (Previsão de colheita, com Pular) ──────────────
+
+function QuickObservacao({
+  state,
+  dispatch,
+}: {
+  state: State;
+  dispatch: React.Dispatch<Action>;
+}) {
+  const [valor, setValor] = useState(state.current.observacao);
+
+  function avancar(texto: string | null) {
+    const t = texto ?? '';
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: t || '(pulado)', choice: true },
+        { kind: 'bot', texto: `Qual sua recomendação técnica para o ${state.current.talhaoNome}?` },
+      ],
+      proximoStep: 'recomendacao',
+      patchCurrent: { observacao: t },
+    });
+  }
+
+  return (
+    <QABarContainer>
+      <Input
+        multiline
+        numberOfLines={4}
+        minH={100}
+        placeholder="Observações sobre o estágio da cultura..."
+        value={valor}
+        onChangeText={setValor}
+        textAlignVertical="top"
+        bg={colors.surface}
+        borderColor={colors.border}
+      />
+      <XStack gap="$2">
+        <View style={{ flex: 1 }}>
+          <QABtn label="Pular" onPress={() => avancar(null)} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <QABtn label="Continuar" variant="primary" disabled={!valor.trim()} onPress={() => avancar(valor)} />
+        </View>
+      </XStack>
+    </QABarContainer>
+  );
+}
+
+// ─── Step: Fotos (comum) ──────────────────────────────────────────────
 
 function QuickFotos({
   state,
@@ -809,8 +1482,8 @@ function QuickFotos({
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraAberta, setCameraAberta] = useState(false);
   const cameraRef = useRef<CameraView>(null);
-
   const fotos = state.current.fotos;
+  const obrigatorio = state.tipoVisita === 'monitoramento_pragas';
 
   async function tirarFoto() {
     if (!cameraRef.current) return;
@@ -831,40 +1504,76 @@ function QuickFotos({
       // sem geo específico
     }
 
-    const novaFoto: FotoOcorrencia = {
-      uri: foto.uri,
-      latitude,
-      longitude,
-      capturadoEm: new Date().toISOString(),
-    };
-    dispatch({ type: 'add-foto', foto: novaFoto });
+    dispatch({
+      type: 'add-foto',
+      foto: { uri: foto.uri, latitude, longitude, capturadoEm: new Date().toISOString() },
+    });
     setCameraAberta(false);
   }
 
+  function avancarSemFotos() {
+    const proximo: Step =
+      state.tipoVisita === 'plantio'
+        ? 'adubacao_base'
+        : state.tipoVisita === 'colheita'
+          ? 'observacao'
+          : 'recomendacao';
+    const pergunta =
+      state.tipoVisita === 'plantio'
+        ? 'Como foi a adubação de base?'
+        : state.tipoVisita === 'colheita'
+          ? 'Alguma observação sobre a colheita?'
+          : `Qual sua recomendação técnica para o ${state.current.talhaoNome}?`;
+    dispatch({
+      type: 'push',
+      items: [
+        { kind: 'user', texto: '(sem fotos)', choice: true },
+        { kind: 'bot', texto: pergunta },
+      ],
+      proximoStep: proximo,
+    });
+  }
+
   function concluirFotos() {
-    const pragaNome = state.current.pragaId
-      ? mockPragas.find((p) => p.id === state.current.pragaId)?.nome
-      : state.current.pragaNomeCustom;
+    if (fotos.length === 0) {
+      avancarSemFotos();
+      return;
+    }
+    const proximo: Step =
+      state.tipoVisita === 'plantio'
+        ? 'adubacao_base'
+        : state.tipoVisita === 'colheita'
+          ? 'observacao'
+          : 'recomendacao';
+    const pergunta =
+      state.tipoVisita === 'plantio'
+        ? 'Como foi a adubação de base?'
+        : state.tipoVisita === 'colheita'
+          ? 'Alguma observação sobre a colheita?'
+          : `Qual sua recomendação técnica para o ${state.current.talhaoNome}?`;
+
     const ultima = fotos[fotos.length - 1];
     const geo =
       ultima && ultima.latitude !== undefined && ultima.longitude !== undefined
         ? `${ultima.latitude.toFixed(5)}, ${ultima.longitude.toFixed(5)}`
         : undefined;
+    const pragaNome = state.current.pragaId
+      ? mockPragas.find((p) => p.id === state.current.pragaId)?.nome
+      : state.current.pragaNomeCustom;
+    const labelTipo =
+      state.tipoVisita === 'monitoramento_pragas'
+        ? pragaNome ?? 'ocorrência'
+        : state.tipoVisita === 'plantio'
+          ? state.current.cultura ?? 'plantio'
+          : state.current.cultura ?? 'cultura';
 
     dispatch({
       type: 'push',
       items: [
-        {
-          kind: 'evidence',
-          label: `${fotos.length} foto${fotos.length > 1 ? 's' : ''} de ${pragaNome ?? 'ocorrência'}`,
-          geo,
-        },
-        {
-          kind: 'bot',
-          texto: `Qual sua recomendação técnica para o ${state.current.talhaoNome}?`,
-        },
+        { kind: 'evidence', label: `${fotos.length} foto${fotos.length > 1 ? 's' : ''} de ${labelTipo}`, geo },
+        { kind: 'bot', texto: pergunta },
       ],
-      proximoStep: 'recomendacao',
+      proximoStep: proximo,
     });
   }
 
@@ -895,9 +1604,7 @@ function QuickFotos({
                   style={styles.removeThumb}
                   hitSlop={8}
                 >
-                  <Text style={{ color: colors.white, fontWeight: '700', fontSize: 12 }}>
-                    ×
-                  </Text>
+                  <Text style={{ color: colors.white, fontWeight: '700', fontSize: 12 }}>×</Text>
                 </Pressable>
               </View>
             ))}
@@ -910,7 +1617,7 @@ function QuickFotos({
       ) : !permission.granted ? (
         <>
           <Paragraph fontSize={13} color={colors.textMuted}>
-            Precisamos de acesso à câmera para registrar a ocorrência.
+            Precisamos de acesso à câmera para registrar fotos.
           </Paragraph>
           <QABtn label="Permitir câmera" variant="primary" onPress={requestPermission} />
         </>
@@ -921,20 +1628,22 @@ function QuickFotos({
             variant={fotos.length === 0 ? 'primary' : 'secondary'}
             onPress={() => setCameraAberta(true)}
           />
-          {fotos.length > 0 && (
+          {fotos.length > 0 ? (
             <QABtn
               label={`Concluir (${fotos.length} foto${fotos.length > 1 ? 's' : ''})`}
               variant="primary"
               onPress={concluirFotos}
             />
-          )}
+          ) : !obrigatorio ? (
+            <QABtn label="Pular fotos" onPress={avancarSemFotos} />
+          ) : null}
         </>
       )}
     </QABarContainer>
   );
 }
 
-// ─── Step: Recomendação ───────────────────────────────────────────────
+// ─── Step: Recomendação (com Pular) ──────────────────────────────────
 
 function QuickRecomendacao({
   state,
@@ -943,15 +1652,13 @@ function QuickRecomendacao({
   state: State;
   dispatch: React.Dispatch<Action>;
 }) {
-  function confirmar() {
-    const texto = state.current.recomendacao.trim();
-    if (!texto) return;
+  function avancar(texto: string | null) {
+    const t = texto ?? '';
     const talhaoNome = state.current.talhaoNome;
-
     dispatch({
       type: 'finalize-current',
       items: [
-        { kind: 'user', texto: texto, choice: true },
+        { kind: 'user', texto: t || '(pulado)', choice: true },
         { kind: 'divider', texto: `${talhaoNome} REGISTRADO` },
         {
           kind: 'bot',
@@ -968,21 +1675,26 @@ function QuickRecomendacao({
         multiline
         numberOfLines={4}
         minH={100}
-        placeholder="Descreva sua recomendação técnica para esse talhão..."
+        placeholder="Descreva sua recomendação técnica..."
         value={state.current.recomendacao}
-        onChangeText={(texto) =>
-          dispatch({ type: 'set-current', patch: { recomendacao: texto } })
-        }
+        onChangeText={(texto) => dispatch({ type: 'set-current', patch: { recomendacao: texto } })}
         textAlignVertical="top"
         bg={colors.surface}
         borderColor={colors.border}
       />
-      <QABtn
-        label="Concluir talhão"
-        variant="primary"
-        disabled={!state.current.recomendacao.trim()}
-        onPress={confirmar}
-      />
+      <XStack gap="$2">
+        <View style={{ flex: 1 }}>
+          <QABtn label="Pular" onPress={() => avancar(null)} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <QABtn
+            label="Concluir talhão"
+            variant="primary"
+            disabled={!state.current.recomendacao.trim()}
+            onPress={() => avancar(state.current.recomendacao)}
+          />
+        </View>
+      </XStack>
     </QABarContainer>
   );
 }
@@ -1086,11 +1798,17 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 24,
   },
-  bubbleBotShape: {
-    borderTopLeftRadius: 4,
-  },
-  bubbleUserShape: {
-    borderTopRightRadius: 4,
+  bubbleBotShape: { borderTopLeftRadius: 4 },
+  bubbleUserShape: { borderTopRightRadius: 4 },
+  editBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   qaBar: {
     paddingHorizontal: 16,

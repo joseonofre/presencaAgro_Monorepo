@@ -165,6 +165,31 @@ function CardAgendada({ visita }: { visita: VisitaAgendada }) {
   );
 }
 
+const styles = StyleSheet.create({
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: Platform.OS === 'ios' ? 24 : 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.greenDeep,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  fabPlus: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
 export default function VisitasScreen() {
   const [salvas, setSalvas] = useState<VisitaSalva[]>([]);
 
@@ -182,26 +207,17 @@ export default function VisitasScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top']}>
-      <XStack px="$4" py="$3" items="center" justify="space-between">
-        <YStack>
-          <Text fontSize={22} fontWeight="800" color={colors.text}>
-            Visitas
-          </Text>
-          <Text fontSize={13} color={colors.textMuted}>
-            {salvas.length} registradas • {mockProximasVisitas.length} agendadas
-          </Text>
-        </YStack>
-        <Pressable onPress={() => router.push('/visita/nova')} hitSlop={8}>
-          <YStack bg={colors.green} px="$3" py="$2" rounded="$10">
-            <Text color={colors.white} fontWeight="700" fontSize={13}>
-              + Nova
-            </Text>
-          </YStack>
-        </Pressable>
-      </XStack>
+      <YStack px="$4" py="$3" gap="$1">
+        <Text fontSize={22} fontWeight="800" color={colors.text}>
+          Visitas
+        </Text>
+        <Text fontSize={13} color={colors.textMuted}>
+          {salvas.length} registradas • {mockProximasVisitas.length} agendadas
+        </Text>
+      </YStack>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, gap: 12 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 96, gap: 12 }}
       >
         <YStack gap="$3">
           {salvas.length > 0 && (
@@ -225,9 +241,9 @@ export default function VisitasScreen() {
           {salvas.length === 0 && (
             <YStack items="center" py="$6" gap="$2">
               <Paragraph fontSize={14} color={colors.textMuted} text="center">
-                Você ainda não registrou nenhuma visita.{'\n'}Toque em{' '}
+                Você ainda não registrou nenhuma visita.{'\n'}Toque no botão{' '}
                 <Text fontWeight="700" color={colors.green}>
-                  + Nova
+                  +
                 </Text>{' '}
                 para começar.
               </Paragraph>
@@ -235,6 +251,19 @@ export default function VisitasScreen() {
           )}
         </YStack>
       </ScrollView>
+
+      {/* FAB Nova Visita */}
+      <Pressable
+        onPress={() => router.push('/visita/nova')}
+        style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
+        hitSlop={8}
+      >
+        <View style={styles.fabPlus}>
+          <Text style={{ color: colors.white, fontSize: 30, fontWeight: '300', lineHeight: 32 }}>
+            +
+          </Text>
+        </View>
+      </Pressable>
     </SafeAreaView>
   );
 }
