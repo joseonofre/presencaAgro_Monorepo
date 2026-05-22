@@ -4,10 +4,9 @@ import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, Paragraph, Text, YStack } from 'tamagui';
 
+import { EMAIL_RE } from '@/auth/AuthContext';
 import { BackLink, Field, PrimaryButton, SecondaryButton } from '@/components/forms';
 import { colors } from '@/theme/colors';
-
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 export default function EsqueciSenhaScreen() {
   const [email, setEmail] = useState('');
@@ -34,9 +33,10 @@ export default function EsqueciSenhaScreen() {
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingVertical: 16 }}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
       >
         <YStack flex={1} gap="$5">
-          <BackLink onPress={() => router.back()} />
+          <BackLink onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
 
           <YStack gap="$2" pt="$2">
             <Text fontSize={26} fontWeight="800" color={colors.text}>

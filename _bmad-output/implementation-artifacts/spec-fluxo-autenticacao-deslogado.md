@@ -2,7 +2,7 @@
 title: 'Fluxo de autenticação deslogado (landing + login + cadastro + esqueci senha)'
 type: 'feature'
 created: '2026-05-21'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'b18ce9315fb63448bd0228cbb535af0777ba8d6a'
 context:
   - '{project-root}/apps/mobile/AGENTS.md'
@@ -87,3 +87,33 @@ context:
 
 **Manual checks:**
 - Rodar `pnpm --filter @presenca-agro/mobile start`: app deslogado abre na landing; login mock leva à home; "Sair" volta à landing; reabrir mantém logado.
+
+## Suggested Review Order
+
+**O gate (entry point — entenda o desenho aqui primeiro)**
+
+- Estado de auth decide qual grupo de rotas monta, via `Stack.Protected`.
+  [`_layout.tsx:31`](../../apps/mobile/src/app/_layout.tsx#L31)
+- Splash segura até `status` sair de `loading` (sem flicker), com `.catch` defensivo.
+  [`_layout.tsx:16`](../../apps/mobile/src/app/_layout.tsx#L16)
+
+**Estado e persistência de auth**
+
+- Fonte da verdade: `signIn/signUp/signOut` + persistência mock em AsyncStorage.
+  [`AuthContext.tsx:36`](../../apps/mobile/src/auth/AuthContext.tsx#L36)
+- Validação de forma e normalização (trim + lowercase) do e-mail.
+  [`AuthContext.tsx:69`](../../apps/mobile/src/auth/AuthContext.tsx#L69)
+
+**Telas públicas**
+
+- Landing de apresentação com os CTAs Entrar / Criar conta.
+  [`index.tsx:9`](../../apps/mobile/src/app/(auth)/index.tsx#L9)
+- Login: chama `signIn`; no sucesso o gate desmonta a tela (sem setState pós-unmount).
+  [`login.tsx:19`](../../apps/mobile/src/app/(auth)/login.tsx#L19)
+- Primitivos compartilhados (Field/botões) que mantêm as 4 telas DRY.
+  [`forms.tsx:18`](../../apps/mobile/src/components/forms.tsx#L18)
+
+**Logout**
+
+- "Sair" do drawer ligado ao `signOut` — fecha o loop deslogado↔logado.
+  [`(drawer)/_layout.tsx:49`](../../apps/mobile/src/app/(drawer)/_layout.tsx#L49)

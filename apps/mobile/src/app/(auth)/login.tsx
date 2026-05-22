@@ -21,10 +21,9 @@ export default function LoginScreen() {
     setCarregando(true);
     try {
       await signIn(email, senha);
-      // Autenticou: o gate na raiz redireciona para a área logada.
+      // Autenticou: o gate na raiz desmonta esta tela — não chamar setState aqui.
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não foi possível entrar.');
-    } finally {
       setCarregando(false);
     }
   }
@@ -34,9 +33,10 @@ export default function LoginScreen() {
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingVertical: 16 }}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
       >
         <YStack flex={1} gap="$5">
-          <BackLink onPress={() => router.back()} />
+          <BackLink onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
 
           <YStack items="center" pt="$2">
             <LogoFull size={200} />

@@ -21,10 +21,9 @@ export default function CadastroScreen() {
     setCarregando(true);
     try {
       await signUp({ nome, email, senha });
-      // Conta criada: o gate na raiz redireciona para a área logada.
+      // Conta criada: o gate na raiz desmonta esta tela — não chamar setState aqui.
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não foi possível criar a conta.');
-    } finally {
       setCarregando(false);
     }
   }
@@ -34,9 +33,10 @@ export default function CadastroScreen() {
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingVertical: 16 }}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
       >
         <YStack flex={1} gap="$5">
-          <BackLink onPress={() => router.back()} />
+          <BackLink onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
 
           <YStack gap="$2" pt="$2">
             <Text fontSize={26} fontWeight="800" color={colors.text}>

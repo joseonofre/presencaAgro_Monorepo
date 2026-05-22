@@ -17,3 +17,10 @@ Pedido original cobria 3 objetivos. Escolhido começar pelo **Goal A (auth)**. O
 - Dentro da fazenda: visualizar talhões.
 - Já existem tipos/mocks parciais em `src/data/mocks.ts` (`Fazenda`, `Talhao`, `mockFazendas`, `mockTalhoes`, `talhoesDeFazenda`). Falta o conceito de **Cliente** (no brief = produtor/cliente final) como entidade própria acima de Fazenda.
 - **Premissa:** protótipo navegável com mocks/AsyncStorage, sem backend real.
+
+## 2026-05-21 — Achados de review do Goal A (auth) adiados
+
+Surgiram no review da spec `spec-fluxo-autenticacao-deslogado.md`; não bloqueiam, ficam para o auth real (Goal B / backend):
+
+- **Identidade do usuário no login:** `signIn` (mock) não confere a conta criada no `signUp` — autentica qualquer e-mail bem formado e deriva o nome do e-mail, ignorando o nome cadastrado. Resolver quando `useAuth().user` for consumido na área logada (Goal B) ou ao plugar Better-Auth.
+- **Acessibilidade/UX dos formulários (`src/components/forms.tsx`):** `Field` não expõe `returnKeyType`/`onSubmitEditing` (avançar foco entre campos) nem `testID`/`accessibilityLabel`; botões sem `accessibilityState={{ disabled }}`. Endereçar numa passada de polish/a11y.

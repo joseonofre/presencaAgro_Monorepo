@@ -11,14 +11,14 @@ import { AuthProvider, useAuth } from '@/auth/AuthContext';
 import config from '../../tamagui.config';
 
 // Mantém a splash visível até o estado de auth resolver (evita flicker da tela errada).
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootNavigator() {
   const { status } = useAuth();
 
   useEffect(() => {
     if (status !== 'loading') {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [status]);
 

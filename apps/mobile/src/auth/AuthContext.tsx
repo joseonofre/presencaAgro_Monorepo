@@ -9,7 +9,7 @@ import {
 
 const STORAGE_KEY = '@presenca-agro/auth';
 
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
+export const EMAIL_RE = /^\S+@\S+\.\S+$/;
 
 export interface AuthUser {
   nome: string;
@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as { user?: AuthUser };
-          if (parsed?.user?.email) {
+          if (parsed?.user?.email?.trim()) {
             setUser(parsed.user);
             setStatus('authed');
             return;
@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signIn(email: string, senha: string) {
-    const e = email.trim();
+    const e = email.trim().toLowerCase();
     if (!e || !senha) throw new Error('Preencha e-mail e senha.');
     if (!EMAIL_RE.test(e)) throw new Error('E-mail inválido.');
     await persist({ nome: nomeDoEmail(e), email: e });
@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     senha: string;
   }) {
     const n = nome.trim();
-    const e = email.trim();
+    const e = email.trim().toLowerCase();
     if (!n || !e || !senha) throw new Error('Preencha todos os campos.');
     if (!EMAIL_RE.test(e)) throw new Error('E-mail inválido.');
     await persist({ nome: n, email: e });
@@ -108,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 /** Deriva um nome legível a partir do e-mail (mock, p/ exibir na home). */
 function nomeDoEmail(email: string): string {
-  const base = email.split('@')[0]?.replace(/[._-]+/g, ' ') ?? '';
+  const base = email.split('@')[0]?.replace(/[._-]+/g, ' ').trim() ?? '';
   const titulo = base.replace(/\b\w/g, (c) => c.toUpperCase());
   return titulo || 'Consultor';
 }
