@@ -1,0 +1,727 @@
+diff --git a/apps/mobile/package.json b/apps/mobile/package.json
+index e2a12ba..f944d18 100644
+--- a/apps/mobile/package.json
++++ b/apps/mobile/package.json
+@@ -47,6 +47,8 @@
+   },
+   "devDependencies": {
+     "@types/react": "~19.2.2",
++    "eslint": "^9.39.4",
++    "eslint-config-expo": "~56.0.4",
+     "typescript": "~6.0.3"
+   },
+   "private": true
+diff --git a/apps/mobile/src/app/(drawer)/_layout.tsx b/apps/mobile/src/app/(drawer)/_layout.tsx
+index d94b98f..17fd066 100644
+--- a/apps/mobile/src/app/(drawer)/_layout.tsx
++++ b/apps/mobile/src/app/(drawer)/_layout.tsx
+@@ -3,10 +3,13 @@ import { Pressable, View } from 'react-native';
+ import { SafeAreaView } from 'react-native-safe-area-context';
+ import { Paragraph, Text, XStack, YStack } from 'tamagui';
+ 
++import { useAuth } from '@/auth/AuthContext';
+ import { LogoFull } from '@/components/Logo';
+ import { colors } from '@/theme/colors';
+ 
+ function CustomDrawerContent() {
++  const { signOut } = useAuth();
++
+   return (
+     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={['top']}>
+       <YStack flex={1} p="$4" gap="$4">
+@@ -43,7 +46,7 @@ function CustomDrawerContent() {
+ 
+         <YStack flex={1} />
+ 
+-        <Pressable>
++        <Pressable onPress={() => signOut()}>
+           <XStack
+             p="$3"
+             rounded="$3"
+diff --git a/apps/mobile/src/app/_layout.tsx b/apps/mobile/src/app/_layout.tsx
+index 2239125..2e1da77 100644
+--- a/apps/mobile/src/app/_layout.tsx
++++ b/apps/mobile/src/app/_layout.tsx
+@@ -1,24 +1,56 @@
+ import 'react-native-gesture-handler';
+ 
+ import { Stack } from 'expo-router';
++import * as SplashScreen from 'expo-splash-screen';
+ import { StatusBar } from 'expo-status-bar';
++import { useEffect } from 'react';
+ import { GestureHandlerRootView } from 'react-native-gesture-handler';
+ import { TamaguiProvider } from 'tamagui';
+ 
++import { AuthProvider, useAuth } from '@/auth/AuthContext';
+ import config from '../../tamagui.config';
+ 
++// Mantém a splash visível até o estado de auth resolver (evita flicker da tela errada).
++SplashScreen.preventAutoHideAsync();
++
++function RootNavigator() {
++  const { status } = useAuth();
++
++  useEffect(() => {
++    if (status !== 'loading') {
++      SplashScreen.hideAsync();
++    }
++  }, [status]);
++
++  if (status === 'loading') return null;
++
++  const authed = status === 'authed';
++
++  return (
++    <Stack screenOptions={{ headerShown: false }}>
++      <Stack.Protected guard={authed}>
++        <Stack.Screen name="(drawer)" />
++        <Stack.Screen
++          name="visita/nova"
++          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
++        />
++      </Stack.Protected>
++
++      <Stack.Protected guard={!authed}>
++        <Stack.Screen name="(auth)" />
++      </Stack.Protected>
++    </Stack>
++  );
++}
++
+ export default function RootLayout() {
+   return (
+     <GestureHandlerRootView style={{ flex: 1 }}>
+       <TamaguiProvider config={config} defaultTheme="light">
+         <StatusBar style="dark" />
+-        <Stack screenOptions={{ headerShown: false }}>
+-          <Stack.Screen name="(drawer)" />
+-          <Stack.Screen
+-            name="visita/nova"
+-            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+-          />
+-        </Stack>
++        <AuthProvider>
++          <RootNavigator />
++        </AuthProvider>
+       </TamaguiProvider>
+     </GestureHandlerRootView>
+   );
+diff --git a/apps/mobile/src/app/(auth)/_layout.tsx b/apps/mobile/src/app/(auth)/_layout.tsx
+new file mode 100644
+index 0000000..5c5737d
+--- /dev/null
++++ b/apps/mobile/src/app/(auth)/_layout.tsx
+@@ -0,0 +1,5 @@
++import { Stack } from 'expo-router';
++
++export default function AuthLayout() {
++  return <Stack screenOptions={{ headerShown: false }} />;
++}
+diff --git a/apps/mobile/src/app/(auth)/index.tsx b/apps/mobile/src/app/(auth)/index.tsx
+new file mode 100644
+index 0000000..d728884
+--- /dev/null
++++ b/apps/mobile/src/app/(auth)/index.tsx
+@@ -0,0 +1,52 @@
++import { router } from 'expo-router';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { Paragraph, Text, YStack } from 'tamagui';
++
++import { LogoMark } from '@/components/Logo';
++import { PrimaryButton, SecondaryButton } from '@/components/forms';
++import { colors } from '@/theme/colors';
++
++export default function LandingScreen() {
++  return (
++    <SafeAreaView style={{ flex: 1, backgroundColor: colors.green }}>
++      <YStack flex={1} justify="space-between" px="$5" py="$6">
++        {/* Hero */}
++        <YStack flex={1} justify="center" items="center" gap="$5">
++          <YStack
++            width={112}
++            height={112}
++            rounded="$9"
++            bg={colors.white}
++            items="center"
++            justify="center"
++          >
++            <LogoMark size={64} color={colors.green} />
++          </YStack>
++
++          <YStack items="center" gap="$3">
++            <Text fontSize={30} fontWeight="800" color={colors.white} text="center">
++              Presença Agro
++            </Text>
++            <Paragraph
++              fontSize={16}
++              color={colors.greenLight}
++              text="center"
++              lineHeight={24}
++              maxW={320}
++            >
++              Inteligência por talhão, do campo ao relatório: registre visitas mesmo
++              sem sinal, acompanhe o histórico de cada safra e gere laudos com a marca
++              da sua revenda.
++            </Paragraph>
++          </YStack>
++        </YStack>
++
++        {/* Ações */}
++        <YStack bg={colors.surface} rounded="$8" p="$4" gap="$3">
++          <PrimaryButton label="Entrar" onPress={() => router.push('/login')} />
++          <SecondaryButton label="Criar conta" onPress={() => router.push('/cadastro')} />
++        </YStack>
++      </YStack>
++    </SafeAreaView>
++  );
++}
+diff --git a/apps/mobile/src/app/(auth)/login.tsx b/apps/mobile/src/app/(auth)/login.tsx
+new file mode 100644
+index 0000000..1edc53e
+--- /dev/null
++++ b/apps/mobile/src/app/(auth)/login.tsx
+@@ -0,0 +1,102 @@
++import { router } from 'expo-router';
++import { useState } from 'react';
++import { Pressable, ScrollView } from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { Paragraph, Text, YStack } from 'tamagui';
++
++import { useAuth } from '@/auth/AuthContext';
++import { LogoFull } from '@/components/Logo';
++import { BackLink, Field, PrimaryButton } from '@/components/forms';
++import { colors } from '@/theme/colors';
++
++export default function LoginScreen() {
++  const { signIn } = useAuth();
++  const [email, setEmail] = useState('');
++  const [senha, setSenha] = useState('');
++  const [erro, setErro] = useState<string | null>(null);
++  const [carregando, setCarregando] = useState(false);
++
++  async function entrar() {
++    setErro(null);
++    setCarregando(true);
++    try {
++      await signIn(email, senha);
++      // Autenticou: o gate na raiz redireciona para a área logada.
++    } catch (e) {
++      setErro(e instanceof Error ? e.message : 'Não foi possível entrar.');
++    } finally {
++      setCarregando(false);
++    }
++  }
++
++  return (
++    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top', 'bottom']}>
++      <ScrollView
++        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingVertical: 16 }}
++        keyboardShouldPersistTaps="handled"
++      >
++        <YStack flex={1} gap="$5">
++          <BackLink onPress={() => router.back()} />
++
++          <YStack items="center" pt="$2">
++            <LogoFull size={200} />
++          </YStack>
++
++          <YStack gap="$2">
++            <Text fontSize={24} fontWeight="800" color={colors.text}>
++              Entrar
++            </Text>
++            <Paragraph fontSize={14} color={colors.textMuted}>
++              Acesse sua conta para registrar visitas.
++            </Paragraph>
++          </YStack>
++
++          <YStack gap="$3">
++            <Field
++              label="E-MAIL"
++              value={email}
++              onChangeText={setEmail}
++              placeholder="voce@revenda.com.br"
++              keyboardType="email-address"
++              autoCapitalize="none"
++            />
++            <Field
++              label="SENHA"
++              value={senha}
++              onChangeText={setSenha}
++              placeholder="••••••••"
++              secureTextEntry
++            />
++            {erro ? (
++              <Text fontSize={13} color={colors.red}>
++                {erro}
++              </Text>
++            ) : null}
++            <Pressable onPress={() => router.push('/esqueci-senha')} hitSlop={8}>
++              <Text fontSize={13} fontWeight="600" color={colors.green}>
++                Esqueci a senha
++              </Text>
++            </Pressable>
++          </YStack>
++
++          <PrimaryButton
++            label={carregando ? 'Entrando…' : 'Entrar'}
++            onPress={entrar}
++            disabled={carregando}
++          />
++
++          <YStack flex={1} />
++
++          <Pressable onPress={() => router.push('/cadastro')} hitSlop={8}>
++            <Text fontSize={14} color={colors.textMuted} text="center">
++              Não tem conta?{' '}
++              <Text fontSize={14} fontWeight="700" color={colors.green}>
++                Criar conta
++              </Text>
++            </Text>
++          </Pressable>
++        </YStack>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
+diff --git a/apps/mobile/src/app/(auth)/cadastro.tsx b/apps/mobile/src/app/(auth)/cadastro.tsx
+new file mode 100644
+index 0000000..e90a4cf
+--- /dev/null
++++ b/apps/mobile/src/app/(auth)/cadastro.tsx
+@@ -0,0 +1,100 @@
++import { router } from 'expo-router';
++import { useState } from 'react';
++import { Pressable, ScrollView } from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { Paragraph, Text, YStack } from 'tamagui';
++
++import { useAuth } from '@/auth/AuthContext';
++import { BackLink, Field, PrimaryButton } from '@/components/forms';
++import { colors } from '@/theme/colors';
++
++export default function CadastroScreen() {
++  const { signUp } = useAuth();
++  const [nome, setNome] = useState('');
++  const [email, setEmail] = useState('');
++  const [senha, setSenha] = useState('');
++  const [erro, setErro] = useState<string | null>(null);
++  const [carregando, setCarregando] = useState(false);
++
++  async function criar() {
++    setErro(null);
++    setCarregando(true);
++    try {
++      await signUp({ nome, email, senha });
++      // Conta criada: o gate na raiz redireciona para a área logada.
++    } catch (e) {
++      setErro(e instanceof Error ? e.message : 'Não foi possível criar a conta.');
++    } finally {
++      setCarregando(false);
++    }
++  }
++
++  return (
++    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top', 'bottom']}>
++      <ScrollView
++        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingVertical: 16 }}
++        keyboardShouldPersistTaps="handled"
++      >
++        <YStack flex={1} gap="$5">
++          <BackLink onPress={() => router.back()} />
++
++          <YStack gap="$2" pt="$2">
++            <Text fontSize={26} fontWeight="800" color={colors.text}>
++              Criar conta
++            </Text>
++            <Paragraph fontSize={14} color={colors.textMuted}>
++              Comece a registrar suas visitas técnicas em minutos.
++            </Paragraph>
++          </YStack>
++
++          <YStack gap="$3">
++            <Field
++              label="NOME"
++              value={nome}
++              onChangeText={setNome}
++              placeholder="Seu nome completo"
++              autoCapitalize="words"
++            />
++            <Field
++              label="E-MAIL"
++              value={email}
++              onChangeText={setEmail}
++              placeholder="voce@revenda.com.br"
++              keyboardType="email-address"
++              autoCapitalize="none"
++            />
++            <Field
++              label="SENHA"
++              value={senha}
++              onChangeText={setSenha}
++              placeholder="Crie uma senha"
++              secureTextEntry
++            />
++            {erro ? (
++              <Text fontSize={13} color={colors.red}>
++                {erro}
++              </Text>
++            ) : null}
++          </YStack>
++
++          <PrimaryButton
++            label={carregando ? 'Criando…' : 'Criar conta'}
++            onPress={criar}
++            disabled={carregando}
++          />
++
++          <YStack flex={1} />
++
++          <Pressable onPress={() => router.push('/login')} hitSlop={8}>
++            <Text fontSize={14} color={colors.textMuted} text="center">
++              Já tem conta?{' '}
++              <Text fontSize={14} fontWeight="700" color={colors.green}>
++                Entrar
++              </Text>
++            </Text>
++          </Pressable>
++        </YStack>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
+diff --git a/apps/mobile/src/app/(auth)/esqueci-senha.tsx b/apps/mobile/src/app/(auth)/esqueci-senha.tsx
+new file mode 100644
+index 0000000..9ff6799
+--- /dev/null
++++ b/apps/mobile/src/app/(auth)/esqueci-senha.tsx
+@@ -0,0 +1,88 @@
++import { router } from 'expo-router';
++import { useState } from 'react';
++import { ScrollView } from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import { Card, Paragraph, Text, YStack } from 'tamagui';
++
++import { BackLink, Field, PrimaryButton, SecondaryButton } from '@/components/forms';
++import { colors } from '@/theme/colors';
++
++const EMAIL_RE = /^\S+@\S+\.\S+$/;
++
++export default function EsqueciSenhaScreen() {
++  const [email, setEmail] = useState('');
++  const [erro, setErro] = useState<string | null>(null);
++  const [enviado, setEnviado] = useState(false);
++
++  function enviar() {
++    const e = email.trim();
++    if (!e) {
++      setErro('Informe seu e-mail.');
++      return;
++    }
++    if (!EMAIL_RE.test(e)) {
++      setErro('E-mail inválido.');
++      return;
++    }
++    // Mock: não há backend; apenas confirma o pedido sem revelar se a conta existe.
++    setErro(null);
++    setEnviado(true);
++  }
++
++  return (
++    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top', 'bottom']}>
++      <ScrollView
++        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingVertical: 16 }}
++        keyboardShouldPersistTaps="handled"
++      >
++        <YStack flex={1} gap="$5">
++          <BackLink onPress={() => router.back()} />
++
++          <YStack gap="$2" pt="$2">
++            <Text fontSize={26} fontWeight="800" color={colors.text}>
++              Esqueci a senha
++            </Text>
++            <Paragraph fontSize={14} color={colors.textMuted}>
++              Informe o e-mail da sua conta e enviaremos um link de redefinição.
++            </Paragraph>
++          </YStack>
++
++          {enviado ? (
++            <Card p="$4" borderWidth={1} borderColor={colors.border} bg={colors.greenLighter}>
++              <YStack gap="$2">
++                <Text fontSize={16} fontWeight="700" color={colors.green}>
++                  Pedido enviado
++                </Text>
++                <Paragraph fontSize={14} color={colors.text} lineHeight={20}>
++                  Se houver uma conta para <Text fontWeight="700">{email.trim()}</Text>,
++                  você receberá um e-mail com o link para redefinir a senha.
++                </Paragraph>
++              </YStack>
++            </Card>
++          ) : (
++            <YStack gap="$3">
++              <Field
++                label="E-MAIL"
++                value={email}
++                onChangeText={setEmail}
++                placeholder="voce@revenda.com.br"
++                keyboardType="email-address"
++                autoCapitalize="none"
++              />
++              {erro ? (
++                <Text fontSize={13} color={colors.red}>
++                  {erro}
++                </Text>
++              ) : null}
++              <PrimaryButton label="Enviar link" onPress={enviar} />
++            </YStack>
++          )}
++
++          <YStack flex={1} />
++
++          <SecondaryButton label="Voltar para o login" onPress={() => router.push('/login')} />
++        </YStack>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
+diff --git a/apps/mobile/src/auth/AuthContext.tsx b/apps/mobile/src/auth/AuthContext.tsx
+new file mode 100644
+index 0000000..c4c8c9d
+--- /dev/null
++++ b/apps/mobile/src/auth/AuthContext.tsx
+@@ -0,0 +1,120 @@
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import {
++  createContext,
++  useContext,
++  useEffect,
++  useState,
++  type ReactNode,
++} from 'react';
++
++const STORAGE_KEY = '@presenca-agro/auth';
++
++const EMAIL_RE = /^\S+@\S+\.\S+$/;
++
++export interface AuthUser {
++  nome: string;
++  email: string;
++}
++
++type Status = 'loading' | 'authed' | 'guest';
++
++interface AuthContextValue {
++  status: Status;
++  user: AuthUser | null;
++  signIn: (email: string, senha: string) => Promise<void>;
++  signUp: (dados: { nome: string; email: string; senha: string }) => Promise<void>;
++  signOut: () => Promise<void>;
++}
++
++const AuthContext = createContext<AuthContextValue | null>(null);
++
++/**
++ * Auth MOCK do protótipo: não há backend. Persiste apenas o usuário em
++ * AsyncStorage (mesmo padrão de src/data/storage.ts). Aceita qualquer
++ * credencial bem formada — a validação aqui é só de forma, não de segurança.
++ */
++export function AuthProvider({ children }: { children: ReactNode }) {
++  const [status, setStatus] = useState<Status>('loading');
++  const [user, setUser] = useState<AuthUser | null>(null);
++
++  useEffect(() => {
++    (async () => {
++      try {
++        const raw = await AsyncStorage.getItem(STORAGE_KEY);
++        if (raw) {
++          const parsed = JSON.parse(raw) as { user?: AuthUser };
++          if (parsed?.user?.email) {
++            setUser(parsed.user);
++            setStatus('authed');
++            return;
++          }
++        }
++      } catch (error) {
++        console.warn('[auth] Falha ao ler sessão:', error);
++      }
++      setStatus('guest');
++    })();
++  }, []);
++
++  async function persist(u: AuthUser) {
++    try {
++      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ user: u }));
++    } catch (error) {
++      console.warn('[auth] Falha ao salvar sessão:', error);
++    }
++    setUser(u);
++    setStatus('authed');
++  }
++
++  async function signIn(email: string, senha: string) {
++    const e = email.trim();
++    if (!e || !senha) throw new Error('Preencha e-mail e senha.');
++    if (!EMAIL_RE.test(e)) throw new Error('E-mail inválido.');
++    await persist({ nome: nomeDoEmail(e), email: e });
++  }
++
++  async function signUp({
++    nome,
++    email,
++    senha,
++  }: {
++    nome: string;
++    email: string;
++    senha: string;
++  }) {
++    const n = nome.trim();
++    const e = email.trim();
++    if (!n || !e || !senha) throw new Error('Preencha todos os campos.');
++    if (!EMAIL_RE.test(e)) throw new Error('E-mail inválido.');
++    await persist({ nome: n, email: e });
++  }
++
++  async function signOut() {
++    try {
++      await AsyncStorage.removeItem(STORAGE_KEY);
++    } catch (error) {
++      console.warn('[auth] Falha ao limpar sessão:', error);
++    }
++    setUser(null);
++    setStatus('guest');
++  }
++
++  return (
++    <AuthContext.Provider value={{ status, user, signIn, signUp, signOut }}>
++      {children}
++    </AuthContext.Provider>
++  );
++}
++
++/** Deriva um nome legível a partir do e-mail (mock, p/ exibir na home). */
++function nomeDoEmail(email: string): string {
++  const base = email.split('@')[0]?.replace(/[._-]+/g, ' ') ?? '';
++  const titulo = base.replace(/\b\w/g, (c) => c.toUpperCase());
++  return titulo || 'Consultor';
++}
++
++export function useAuth(): AuthContextValue {
++  const ctx = useContext(AuthContext);
++  if (!ctx) throw new Error('useAuth deve ser usado dentro de AuthProvider');
++  return ctx;
++}
+diff --git a/apps/mobile/src/components/forms.tsx b/apps/mobile/src/components/forms.tsx
+new file mode 100644
+index 0000000..730600e
+--- /dev/null
++++ b/apps/mobile/src/components/forms.tsx
+@@ -0,0 +1,94 @@
++import type { KeyboardTypeOptions } from 'react-native';
++import { Pressable } from 'react-native';
++import { Input, Text, YStack } from 'tamagui';
++
++import { colors } from '@/theme/colors';
++
++interface FieldProps {
++  label: string;
++  value: string;
++  onChangeText: (text: string) => void;
++  placeholder?: string;
++  secureTextEntry?: boolean;
++  keyboardType?: KeyboardTypeOptions;
++  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
++}
++
++/** Campo de formulário rotulado, no estilo visual do app. */
++export function Field({ label, ...inputProps }: FieldProps) {
++  return (
++    <YStack gap="$2">
++      <Text fontSize={13} fontWeight="700" color={colors.textMuted}>
++        {label}
++      </Text>
++      <Input
++        {...inputProps}
++        size="$4"
++        bg={colors.surface}
++        borderColor={colors.border}
++        color={colors.text}
++      />
++    </YStack>
++  );
++}
++
++interface ButtonProps {
++  label: string;
++  onPress?: () => void;
++  disabled?: boolean;
++}
++
++/** Botão primário verde (ação principal). */
++export function PrimaryButton({ label, onPress, disabled }: ButtonProps) {
++  return (
++    <Pressable onPress={onPress} disabled={disabled}>
++      {({ pressed }) => (
++        <YStack
++          py="$3.5"
++          rounded="$4"
++          items="center"
++          bg={disabled ? colors.borderStrong : pressed ? colors.greenDark : colors.green}
++        >
++          <Text fontSize={16} fontWeight="700" color={colors.white}>
++            {label}
++          </Text>
++        </YStack>
++      )}
++    </Pressable>
++  );
++}
++
++/** Botão secundário com contorno verde. */
++export function SecondaryButton({ label, onPress, disabled }: ButtonProps) {
++  return (
++    <Pressable onPress={onPress} disabled={disabled}>
++      {({ pressed }) => (
++        <YStack
++          py="$3.5"
++          rounded="$4"
++          items="center"
++          borderWidth={1.5}
++          borderColor={colors.green}
++          bg={pressed ? colors.greenLighter : 'transparent'}
++        >
++          <Text fontSize={16} fontWeight="700" color={colors.green}>
++            {label}
++          </Text>
++        </YStack>
++      )}
++    </Pressable>
++  );
++}
++
++/** Link de voltar (chevron + texto) para o topo das telas públicas. */
++export function BackLink({ onPress }: { onPress: () => void }) {
++  return (
++    <Pressable onPress={onPress} hitSlop={12}>
++      {({ pressed }) => (
++        <Text fontSize={15} fontWeight="600" color={pressed ? colors.greenDark : colors.green}>
++          ‹ Voltar
++        </Text>
++      )}
++    </Pressable>
++  );
++}
+diff --git a/apps/mobile/eslint.config.js b/apps/mobile/eslint.config.js
+new file mode 100644
+index 0000000..ba708ed
+--- /dev/null
++++ b/apps/mobile/eslint.config.js
+@@ -0,0 +1,10 @@
++// https://docs.expo.dev/guides/using-eslint/
++const { defineConfig } = require('eslint/config');
++const expoConfig = require("eslint-config-expo/flat");
++
++module.exports = defineConfig([
++  expoConfig,
++  {
++    ignores: ["dist/*"],
++  }
++]);

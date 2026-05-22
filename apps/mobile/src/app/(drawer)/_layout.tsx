@@ -3,10 +3,13 @@ import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Paragraph, Text, XStack, YStack } from 'tamagui';
 
+import { useAuth } from '@/auth/AuthContext';
 import { LogoFull } from '@/components/Logo';
 import { colors } from '@/theme/colors';
 
 function CustomDrawerContent() {
+  const { signOut } = useAuth();
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={['top']}>
       <YStack flex={1} p="$4" gap="$4">
@@ -43,7 +46,7 @@ function CustomDrawerContent() {
 
         <YStack flex={1} />
 
-        <Pressable>
+        <Pressable onPress={() => signOut()}>
           <XStack
             p="$3"
             rounded="$3"
